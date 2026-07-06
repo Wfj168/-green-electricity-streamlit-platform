@@ -1,0 +1,30 @@
+﻿Diagnostic,Value
+Maximum electric balance error,1.9895196601282805e-13
+Maximum heat balance error,7.105427357601002e-15
+Maximum cooling balance error,0.0
+Number of capacity upper bounds >=95%,0.0
+Strict storage exclusivity enabled,0.0
+MILP used,0.0
+Carbon cap binding,0.0
+Annual export share of renewable available [%],3.767329028487246
+Storage rule-constrained mode,0.0
+Grid import-export overlap [MWh/year],0.0
+Flexible-load in-out overlap [MWh/year],0.0
+Renewable export attribution enforced,1.0
+Unmet load hard-fixed to zero,0.0
+Annual EENS limit enabled,1.0
+Critical-load protection enabled,1.0
+Minimum local renewable share target [%],
+Minimum renewable utilization target [%],75.0
+Maximum grid-import share target [%],55.00000000000001
+Low-altitude local renewable share target [%],100.0
+Remote low-altitude microgrid screening enabled,1.0
+Low-altitude autonomy target [h],5.0
+Industrial-park green-electricity target [%],80.0
+Carbon allowance [tCO2/year],
+Green-direct target share [%],80.0
+Best green-direct mode index,1.0
+Endogenous P2X enabled,0.0
+P2X heat substitution target [%],0.0
+Max electrolyzer capacity [MW],0.0
+Electrolyzer capacity [MW],0.0

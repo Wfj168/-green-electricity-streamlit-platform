@@ -1,0 +1,21 @@
+﻿Cost item,Value,Unit
+Annualized capital cost,17444536.642228507,EUR/year
+Fixed O&M cost,4347949.699271957,EUR/year
+Grid purchase cost,269085.67967060365,EUR/year
+Grid sale revenue,221072.47379966214,EUR/year
+Grid export wheeling cost,176474.73369360506,EUR/year
+Grid export capacity cost,30000.0,EUR/year
+Gas purchase cost,2109051.6541764527,EUR/year
+Carbon external cost,520468.80267512955,EUR/year
+Demand response cost,0.0,EUR/year
+Renewable curtailment cost,556939.3607938447,EUR/year
+Unserved-energy cost,0.0,EUR/year
+Storage degradation cost,324891.2432463771,EUR/year
+P2X variable O&M cost,0.0,EUR/year
+Grid demand charge,68684.1728679799,EUR/year
+Grid fluctuation cost,50738.818766832526,EUR/year
+Device smoothing cost,147754.75229307904,EUR/year
+Variable operating annual cost,3512547.941709113,EUR/year
+Private total annual cost,25305034.283209577,EUR/year
+Social total annual cost,25825503.085884705,EUR/year
+Objective annual cost,25825503.085884705,EUR/year

@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+.venv/
+venv/
+work/
+outputs/
+.agents/
+.codex/
+*.log

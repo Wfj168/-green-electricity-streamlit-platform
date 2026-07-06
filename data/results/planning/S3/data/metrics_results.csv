@@ -1,0 +1,82 @@
+﻿Metric,Value,Unit
+Annualized capital cost,15423361.961559126,EUR/year
+Fixed O&M cost,3844183.6190816,EUR/year
+Variable operating annual cost,6125075.963822017,EUR/year
+Private total annual cost,25392621.544462744,EUR/year
+Carbon external cost,917944.6877762339,EUR/year
+Social total annual cost,26310566.23223898,EUR/year
+Annual CO2 emissions,20398.770839471865,tCO2/year
+Annual renewable available,526196.5266624611,MWh/year
+Annual renewable used,495515.31194034277,MWh/year
+Renewable utilization rate (including export),94.16924795822543,%
+Renewable curtailment rate,5.83075204177456,%
+Annual renewable curtailment,30681.21472211827,MWh/year
+Annual renewable local absorption,473502.44526025216,MWh/year
+Annual renewable export,22012.866680090607,MWh/year
+Renewable local consumption rate,95.55758093652193,%
+Renewable local absorption rate,89.98585533499528,%
+Renewable export rate,4.183392623230138,%
+Renewable local share of electric-service demand,91.26048852407418,%
+Grid import share of electric-service demand,2.5917536594455823,%
+Annual unmet load,0.0,MWh/year
+Annual electric unmet load,0.0,MWh/year
+Annual heat unmet load,0.0,MWh/year
+Annual cooling unmet load,0.0,MWh/year
+Electric service rate,100.0,%
+Heat service rate,100.0,%
+Cooling service rate,100.0,%
+Total multi-energy service rate,100.0,%
+Unserved energy ratio,0.0,%
+Expected shortage duration,0.0,h/year
+Annual grid import,13447.240039000655,MWh/year
+Annual grid export,22012.866680090607,MWh/year
+Peak grid import,26.310110547300802,MW
+Peak grid export,5.0,MW
+Grid peak-valley difference,31.310110547300802,MW
+Grid weighted standard deviation,5.511107014838958,MW
+Maximum grid ramp,6.033149681467982,MW/step
+Annual battery throughput,0.0,MWh/year
+Battery equivalent cycles,0.0,cycles/year
+Annual thermal-storage throughput,0.0,MWh/year
+Thermal-storage equivalent cycles,0.0,cycles/year
+Annual flexible-load shifting,8404.314635463641,MWh/year
+Annual interruptible load,0.0,MWh/year
+Battery simultaneous overlap,0.0,MWh/year
+Thermal-storage simultaneous overlap,0.0,MWh/year
+Grid import-export overlap,0.0,MWh/year
+Flexible-load in-out overlap,0.0,MWh/year
+Annual low-altitude economy electric load,8294.223384691984,MWh/year
+Annual low-altitude critical electric load,6325.901584414887,MWh/year
+Peak low-altitude economy electric load,1.994274235367669,MW
+Peak low-altitude critical electric load,1.3392940216782419,MW
+Low-altitude economy share of electric load,2.0565533433457053,%
+Battery autonomy for critical low-altitude load,-0.0,h
+Annual industrial-park electric load,182881.59970976447,MWh/year
+Annual industrial-park process heat load,83220.96591969942,MWh/year
+Peak industrial-park electric load,37.94176711376694,MW
+Industrial-park share of electric load,45.345507092764926,%
+Industrial-park local renewable coverage,258.9120206798862,%
+System carbon intensity per electric-service demand,0.03931556871005481,tCO2/MWh
+System carbon intensity per multi-energy demand,0.02661635145195143,tCO2/MWh
+Carbon allowance gap,,tCO2/year
+Green-direct target electricity,0.0,MWh/year
+Park-internal green-direct cost,0.0,million CNY/year
+VPP aggregated green-direct cost,0.0,million CNY/year
+Remote green-base direct cost,0.0,million CNY/year
+Best green-direct mode index,0.0,index
+Best green-direct annual cost,0.0,million CNY/year
+Green-direct saving vs worst option,0.0,%
+Endogenous P2X electricity consumption,0.0,MWh/year
+Endogenous H2 heat supply,0.0,MWh/year
+Endogenous green hydrogen production,0.0,tH2/year
+Endogenous P2X heat substitution share,0.0,%
+Endogenous P2X CO2 avoidance,0.0,tCO2/year
+Electrolyzer capacity,0.0,MW
+Electrolyzer full-load hours,0.0,h/year
+P2X candidate green electricity,0.0,MWh/year
+Green hydrogen production potential,0.0,tH2/year
+Industrial process heat substitution by H2,0.0,MWh/year
+CO2 reduction potential from P2X,0.0,tCO2/year
+Post-P2X residual CO2,20398.770839471865,tCO2/year
+Carbon allowance gap after P2X,,tCO2/year
+P2X screening annual cost,0.0,million CNY/year

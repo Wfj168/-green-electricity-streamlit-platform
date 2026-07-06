@@ -1,0 +1,5 @@
+﻿Scenario,Name,Day name,Electric service rate [%],Heat service rate [%],Cooling service rate [%],Critical-load service rate [%],Total multi-energy service rate [%],Electric unmet [MWh/day],Heat unmet [MWh/day],Cooling unmet [MWh/day],Total unmet [MWh/day],Shortage duration [h/day],Peak grid import [MW],Event-day private operating cost [EUR/day],Event-day carbon external cost [EUR/day],Event-day social operating cost [EUR/day],Annual grid demand charge [EUR/year],Annual export capacity charge [EUR/year]
+Q0,Q0 正常运行日,春季灌溉日,100.0,100.0,100.0,100.0,100.0,0.0,0.0,0.0,0.0,0.0,0.0,6117.866204463471,272.8756784339019,6390.741882897373,0.0,0.0
+Q1,Q1 春灌高负荷—主网降额中等扰动,春季灌溉日,100.0,100.0,100.0,100.0,100.0,0.0,0.0,0.0,0.0,0.0,0.0,7923.722336760028,870.3950743996463,8794.117411159674,0.0,0.0
+Q2,Q2 冬季采暖—低风光中等扰动,冬季采暖日,100.0,100.0,100.0,100.0,100.0,0.0,0.0,0.0,0.0,0.0,21.310009352995703,64932.99389381427,15860.030529122745,80793.02442293701,383580.16835392267,0.0
+Q3,Q3 冬季高负荷—低风光—主网严重降额,冬季采暖日,97.78969404908516,100.0,100.0,100.0,99.00055198919031,27.413512405020526,0.0,0.0,27.413512405020526,4.0,30.0,588555.3773570333,24138.997162556298,612694.3745195896,540000.0,0.0

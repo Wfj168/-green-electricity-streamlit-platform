@@ -1,0 +1,82 @@
+﻿Metric,Value,Unit
+Annualized capital cost,17004153.0090463,EUR/year
+Fixed O&M cost,4238186.629909387,EUR/year
+Variable operating annual cost,3281845.9048781046,EUR/year
+Private total annual cost,24524185.543833796,EUR/year
+Carbon external cost,460817.96672864986,EUR/year
+Social total annual cost,24985003.510562446,EUR/year
+Annual CO2 emissions,10240.399260636666,tCO2/year
+Annual renewable available,538390.6630765311,MWh/year
+Annual renewable used,517902.29029471724,MWh/year
+Renewable utilization rate (including export),96.19451558377015,%
+Renewable curtailment rate,3.8054844162298433,%
+Annual renewable curtailment,20488.372781813912,MWh/year
+Annual renewable local absorption,497619.34255797014,MWh/year
+Annual renewable export,20282.947736747097,MWh/year
+Renewable local consumption rate,96.0836342845279,%
+Renewable local absorption rate,92.42718655528292,%
+Renewable export rate,3.767329028487241,%
+Renewable local share of electric-service demand,95.90865845668132,%
+Grid import share of electric-service demand,0.620936725894678,%
+Annual unmet load,0.0,MWh/year
+Annual electric unmet load,0.0,MWh/year
+Annual heat unmet load,0.0,MWh/year
+Annual cooling unmet load,0.0,MWh/year
+Electric service rate,100.0,%
+Heat service rate,100.0,%
+Cooling service rate,100.0,%
+Total multi-energy service rate,100.0,%
+Unserved energy ratio,0.0,%
+Expected shortage duration,0.0,h/year
+Annual grid import,3221.712515657473,MWh/year
+Annual grid export,20282.947736747097,MWh/year
+Peak grid import,3.3170653632932163,MW
+Peak grid export,5.0,MW
+Grid peak-valley difference,8.317065363293217,MW
+Grid weighted standard deviation,2.9359815385941848,MW
+Maximum grid ramp,5.0,MW/step
+Annual battery throughput,17501.424889010395,MWh/year
+Battery equivalent cycles,331.91271251395966,cycles/year
+Annual thermal-storage throughput,20064.914601032884,MWh/year
+Thermal-storage equivalent cycles,294.93531293801277,cycles/year
+Annual flexible-load shifting,8105.519855282869,MWh/year
+Annual interruptible load,0.0,MWh/year
+Battery simultaneous overlap,0.0,MWh/year
+Thermal-storage simultaneous overlap,0.0,MWh/year
+Grid import-export overlap,0.0,MWh/year
+Flexible-load in-out overlap,0.0,MWh/year
+Annual low-altitude economy electric load,8294.223384691984,MWh/year
+Annual low-altitude critical electric load,6325.901584414887,MWh/year
+Peak low-altitude economy electric load,1.994274235367669,MW
+Peak low-altitude critical electric load,1.3392940216782419,MW
+Low-altitude economy share of electric load,2.0565533433457053,%
+Battery autonomy for critical low-altitude load,31.496593012320044,h
+Annual industrial-park electric load,182881.59970976447,MWh/year
+Annual industrial-park process heat load,83220.96591969942,MWh/year
+Peak industrial-park electric load,37.94176711376694,MW
+Industrial-park share of electric load,45.345507092764926,%
+Industrial-park local renewable coverage,272.09918512726193,%
+System carbon intensity per electric-service demand,0.019736832376728592,tCO2/MWh
+System carbon intensity per multi-energy demand,0.013361690656478098,tCO2/MWh
+Carbon allowance gap,,tCO2/year
+Green-direct target electricity,0.0,MWh/year
+Park-internal green-direct cost,0.0,million CNY/year
+VPP aggregated green-direct cost,0.0,million CNY/year
+Remote green-base direct cost,0.0,million CNY/year
+Best green-direct mode index,0.0,index
+Best green-direct annual cost,0.0,million CNY/year
+Green-direct saving vs worst option,0.0,%
+Endogenous P2X electricity consumption,0.0,MWh/year
+Endogenous H2 heat supply,0.0,MWh/year
+Endogenous green hydrogen production,0.0,tH2/year
+Endogenous P2X heat substitution share,0.0,%
+Endogenous P2X CO2 avoidance,0.0,tCO2/year
+Electrolyzer capacity,0.0,MW
+Electrolyzer full-load hours,0.0,h/year
+P2X candidate green electricity,0.0,MWh/year
+Green hydrogen production potential,0.0,tH2/year
+Industrial process heat substitution by H2,0.0,MWh/year
+CO2 reduction potential from P2X,0.0,tCO2/year
+Post-P2X residual CO2,10240.399260636666,tCO2/year
+Carbon allowance gap after P2X,,tCO2/year
+P2X screening annual cost,0.0,million CNY/year

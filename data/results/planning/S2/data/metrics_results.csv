@@ -1,0 +1,82 @@
+﻿Metric,Value,Unit
+Annualized capital cost,17444536.642228507,EUR/year
+Fixed O&M cost,4347949.699271957,EUR/year
+Variable operating annual cost,3512547.941709113,EUR/year
+Private total annual cost,25305034.283209577,EUR/year
+Carbon external cost,520468.80267512955,EUR/year
+Social total annual cost,25825503.085884705,EUR/year
+Annual CO2 emissions,11565.973392780657,tCO2/year
+Annual renewable available,544519.7839604956,MWh/year
+Annual renewable used,516672.81592080335,MWh/year
+Renewable utilization rate (including export),94.88595844265733,%
+Renewable curtailment rate,5.114041557342663,%
+Annual renewable curtailment,27846.968039692234,MWh/year
+Annual renewable local absorption,494613.4742091027,MWh/year
+Annual renewable export,22059.341711700632,MWh/year
+Renewable local consumption rate,95.73050080593326,%
+Renewable local absorption rate,90.83480321166557,%
+Renewable export rate,4.051155230991757,%
+Renewable local share of electric-service demand,95.32932245387373,%
+Grid import share of electric-service demand,0.5706709464558917,%
+Annual unmet load,0.0,MWh/year
+Annual electric unmet load,0.0,MWh/year
+Annual heat unmet load,0.0,MWh/year
+Annual cooling unmet load,0.0,MWh/year
+Electric service rate,100.0,%
+Heat service rate,100.0,%
+Cooling service rate,100.0,%
+Total multi-energy service rate,100.0,%
+Unserved energy ratio,0.0,%
+Expected shortage duration,0.0,h/year
+Annual grid import,2960.909950800512,MWh/year
+Annual grid export,22059.341711700632,MWh/year
+Peak grid import,3.815787381554439,MW
+Peak grid export,5.0,MW
+Grid peak-valley difference,8.81578738155444,MW
+Grid weighted standard deviation,2.9074279287910634,MW
+Maximum grid ramp,7.5,MW/step
+Annual battery throughput,20349.30436505732,MWh/year
+Battery equivalent cycles,327.76905425561137,cycles/year
+Annual thermal-storage throughput,20000.491067787305,MWh/year
+Thermal-storage equivalent cycles,255.47110032179307,cycles/year
+Annual flexible-load shifting,0.0,MWh/year
+Annual interruptible load,0.0,MWh/year
+Battery simultaneous overlap,0.0,MWh/year
+Thermal-storage simultaneous overlap,0.0,MWh/year
+Grid import-export overlap,0.0,MWh/year
+Flexible-load in-out overlap,0.0,MWh/year
+Annual low-altitude economy electric load,8294.223384691984,MWh/year
+Annual low-altitude critical electric load,6325.901584414887,MWh/year
+Peak low-altitude economy electric load,1.994274235367669,MW
+Peak low-altitude critical electric load,1.3392940216782419,MW
+Low-altitude economy share of electric load,2.0565533433457053,%
+Battery autonomy for critical low-altitude load,37.08477738332197,h
+Annual industrial-park electric load,182881.59970976447,MWh/year
+Annual industrial-park process heat load,83220.96591969942,MWh/year
+Peak industrial-park electric load,37.94176711376694,MW
+Industrial-park share of electric load,45.345507092764926,%
+Industrial-park local renewable coverage,270.45557070479526,%
+System carbon intensity per electric-service demand,0.022291677532973685,tCO2/MWh
+System carbon intensity per multi-energy demand,0.015091302075441097,tCO2/MWh
+Carbon allowance gap,,tCO2/year
+Green-direct target electricity,0.0,MWh/year
+Park-internal green-direct cost,0.0,million CNY/year
+VPP aggregated green-direct cost,0.0,million CNY/year
+Remote green-base direct cost,0.0,million CNY/year
+Best green-direct mode index,0.0,index
+Best green-direct annual cost,0.0,million CNY/year
+Green-direct saving vs worst option,0.0,%
+Endogenous P2X electricity consumption,0.0,MWh/year
+Endogenous H2 heat supply,0.0,MWh/year
+Endogenous green hydrogen production,0.0,tH2/year
+Endogenous P2X heat substitution share,0.0,%
+Endogenous P2X CO2 avoidance,0.0,tCO2/year
+Electrolyzer capacity,0.0,MW
+Electrolyzer full-load hours,0.0,h/year
+P2X candidate green electricity,0.0,MWh/year
+Green hydrogen production potential,0.0,tH2/year
+Industrial process heat substitution by H2,0.0,MWh/year
+CO2 reduction potential from P2X,0.0,tCO2/year
+Post-P2X residual CO2,11565.973392780657,tCO2/year
+Carbon allowance gap after P2X,,tCO2/year
+P2X screening annual cost,0.0,million CNY/year

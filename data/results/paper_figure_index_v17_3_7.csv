@@ -1,0 +1,20 @@
+﻿Figure file stem,中文图名,论文分析类别,核心说明
+01_scenario_logic_matrix,场景功能矩阵,场景设计,说明S0-S8模块叠加逻辑
+02_typical_day_source_load_enhanced,多典型日源荷特征,输入特征,展示源荷时序差异及低空/园区负荷
+03_load_composition_and_new_loads,负荷构成与新增业务负荷,输入特征,突出低空经济和产业园区负荷贡献
+04_cost_carbon_frontier,成本—碳排放权衡,综合效果,展示成本与减排之间的权衡
+05_capacity_configuration_enhanced,容量配置对比,规划决策,分析不同场景下风光储和转换设备配置
+06_cost_composition_enhanced,成本构成对比,经济性,分解资本、购电、购气、碳成本等
+07_carbon_renewable_grid_dashboard,低碳、新能源与主网依赖,低碳消纳,展示碳排、新能源利用和主网购电
+08_s7_electric_balance_typical_day,S8典型日电力平衡,运行机理,展示光伏、风电、储能、CHP和主网协同
+09_storage_soc_and_resilience_mechanism,储能SOC与韧性机理,运行机理,说明储能消纳和关键负荷保障作用
+10_grid_exchange_and_ramp_comparison,主网交互与爬坡,问题分析,分析主网依赖下降和短时爬坡问题
+11_multi_energy_carbon_coupling,电热气碳耦合,多能协同,展示电热气碳同步变化
+12_low_altitude_resilience_effect,低空经济韧性效果,特色模块,支撑偏远低空关键负荷保障分析
+13_industrial_park_netzero_effect,产业园区净零协同,特色模块,展示园区绿电覆盖和碳强度变化
+14_green_direct_option_comparison,绿电直连方式比较,方案比较,比较三类绿电直连补充方式
+15_integrated_performance_normalized,综合绩效归一化,综合评价,多维度比较S0/S4/S5/S6/S7/S8
+16_s0_to_s7_module_gain,模块增益拆解,贡献分析,拆解每个模块的边际贡献
+17_problem_exposure_mismatch_curtailment_grid,问题暴露图,问题分析,识别错配、弃电和主网尖峰
+18_p2x_carbon_management_screening,P2X与碳管理筛查,投稿深化,估算绿氢替代过程热和碳配额改善潜力
+19_paper_result_figure_index,论文结果图索引,章节组织,形成论文结果章节图件总览
