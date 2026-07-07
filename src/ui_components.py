@@ -15,6 +15,7 @@ GRADIENTS = {
     "cyan": "linear-gradient(135deg, #06b6d4, #0ea5e9)",
     "amber": "linear-gradient(135deg, #f59e0b, #facc15)",
     "red": "linear-gradient(135deg, #ef4444, #f97316)",
+    "slate": "linear-gradient(135deg, #64748b, #334155)",
 }
 
 
@@ -118,10 +119,24 @@ def inject_global_css() -> None:
           background: linear-gradient(135deg, #0ea5e9, #22c55e);
           display: inline-block;
         }
-        .overview-panel {
-          background: #ffffff;
-          border-radius: 8px;
+        .overview-panel,
+        .white-panel,
+        .feature-card,
+        .route-card,
+        .idea-card,
+        .innovation-card,
+        .mode-card,
+        .diagram-card,
+        .soft-panel,
+        .cost-card,
+        .algorithm-card {
+          background: #fff;
           border: 1px solid #edf2f7;
+          border-radius: 8px;
+          padding: 20px;
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+        }
+        .overview-panel {
           padding: 28px 32px;
           box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
           margin-bottom: 20px;
@@ -176,23 +191,11 @@ def inject_global_css() -> None:
           grid-template-columns: 1fr;
           gap: 14px;
         }
-        .feature-card,
-        .route-card,
-        .idea-card,
-        .innovation-card,
-        .mode-card,
-        .diagram-card,
-        .soft-panel {
-          background: #fff;
-          border: 1px solid #edf2f7;
-          border-radius: 8px;
-          padding: 20px;
-          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-        }
         .feature-card b,
         .route-card b,
         .idea-card b,
-        .innovation-card b {
+        .innovation-card b,
+        .algorithm-card b {
           display: block;
           font-size: 18px;
           margin-bottom: 8px;
@@ -202,7 +205,8 @@ def inject_global_css() -> None:
         .idea-card span,
         .innovation-card span,
         .mode-card span,
-        .soft-panel span {
+        .soft-panel span,
+        .algorithm-card span {
           color: #64748b;
           line-height: 1.65;
         }
@@ -253,6 +257,8 @@ def inject_global_css() -> None:
         .green-panel { background: #ecfdf5; border-color: #86efac; }
         .blue-panel { background: #eff6ff; border-color: #93c5fd; }
         .purple-panel { background: #faf5ff; border-color: #d8b4fe; }
+        .orange-panel { background: #fff7ed; border-color: #fdba74; }
+        .teal-panel { background: #f0fdfa; border-color: #5eead4; }
         .mode-card {
           min-height: 170px;
           margin-bottom: 16px;
@@ -306,11 +312,7 @@ def inject_global_css() -> None:
           margin: 18px 0;
         }
         .cost-card {
-          padding: 24px;
-          border-radius: 8px;
           min-height: 150px;
-          border: 1px solid #e5e7eb;
-          background: #fff;
           text-align: center;
         }
         .cost-card.selected {
@@ -340,6 +342,31 @@ def inject_global_css() -> None:
           font-weight: 700;
           margin-bottom: 12px;
         }
+        .pill {
+          display: inline-block;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: #eef2ff;
+          color: #4338ca;
+          font-size: 12px;
+          font-weight: 700;
+          margin-right: 6px;
+          margin-bottom: 6px;
+        }
+        .ok-box {
+          background: #ecfdf5;
+          border: 1px solid #bbf7d0;
+          color: #166534;
+          border-radius: 8px;
+          padding: 14px 16px;
+        }
+        .warn-box {
+          background: #fff7ed;
+          border: 1px solid #fed7aa;
+          color: #9a3412;
+          border-radius: 8px;
+          padding: 14px 16px;
+        }
         div[data-testid="stMetric"] {
           background: #fff;
           padding: 16px;
@@ -365,6 +392,11 @@ def section_label(text: str) -> None:
 
 def badge(text: str) -> None:
     st.markdown(f'<span class="badge">{html.escape(text)}</span>', unsafe_allow_html=True)
+
+
+def pills(items: list[str]) -> None:
+    rendered = "".join(f'<span class="pill">{html.escape(item)}</span>' for item in items)
+    st.markdown(rendered, unsafe_allow_html=True)
 
 
 def metric_card(label: str, value: str, unit: str, color: str = "blue", mark: str = "") -> None:
@@ -410,5 +442,13 @@ def empty_hint(title: str, body: str) -> None:
           <span>{html.escape(body)}</span>
         </div>
         """,
+        unsafe_allow_html=True,
+    )
+
+
+def status_box(title: str, body: str, ok: bool = True) -> None:
+    cls = "ok-box" if ok else "warn-box"
+    st.markdown(
+        f'<div class="{cls}"><b>{html.escape(title)}</b><br>{html.escape(body)}</div>',
         unsafe_allow_html=True,
     )

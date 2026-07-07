@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from src import charts
+from src.algorithm_catalog import algorithm_dataframe, storemore_feature_dataframe
 from src.data_loader import (
     figure_assets,
     load_carbon_management,
@@ -15,6 +16,7 @@ from src.data_loader import (
     load_summary,
     metric_from_table,
 )
+from src.diagnostics import old_platform_note, run_static_checks
 from src.model_adapter import run_quick_trial
 from src.ui_components import (
     badge,
@@ -23,7 +25,9 @@ from src.ui_components import (
     inject_global_css,
     metric_card,
     page_title,
+    pills,
     section_label,
+    status_box,
 )
 
 
@@ -33,7 +37,7 @@ BRAND = "绿电向导"
 
 st.set_page_config(
     page_title=APP_TITLE,
-    page_icon="leaf",
+    page_icon="G",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -70,11 +74,11 @@ def _scenario_row(summary: pd.DataFrame, scenario: str) -> pd.Series:
 
 def _mode_name(index: float) -> str:
     mapping = {
-        1: "园区内绿电",
+        1: "园区内新建绿电",
         2: "虚拟电厂聚合绿电",
         3: "绿电基地",
     }
-    return mapping.get(int(round(index or 1)), "园区内绿电")
+    return mapping.get(int(round(index or 1)), "园区内新建绿电")
 
 
 def _sidebar() -> str:
@@ -96,15 +100,21 @@ def _sidebar() -> str:
             [
                 "平台概述",
                 "系统构建与运行机制设置",
+                "算法与界面对应关系",
                 "调度结果图",
                 "调度综合指标分析",
                 "常见案例对比分析",
                 "绿电直连补充方式",
+                "StoreMore融合与功能自检",
                 "技术路线与创新点",
             ],
             label_visibility="collapsed",
         )
-        st.markdown('<div class="sidebar-note">模型口径：县域/园区综合能源线性规划与调度，不是真实 10kV 潮流仿真。</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sidebar-note">模型定位：县域/园区综合能源系统线性规划与调度模型，'
+            "用于方案规划、低碳机制比较、调度结果展示和决策支持；不表述为真实10kV潮流平台。</div>",
+            unsafe_allow_html=True,
+        )
     return page
 
 
@@ -120,8 +130,9 @@ def overview_page() -> None:
         <div class="overview-panel">
           <div class="overview-title">面向园区级复杂能源系统的规划、运行调度与低碳效益评估工具</div>
           <div class="overview-text">
-          平台基于 V17.3.9 县域/园区综合能源模型，聚合电、热、气、氢、碳多维数据，
-          支持规划场景、运行场景、碳管理、绿电直连和常见案例对比的演示分析。
+          平台基于 V17.3.9 县域/园区综合能源模型，融合 StoreMore 的能源系统建模思路，
+          将电、热、冷、气、氢、碳等维度统一到可交互的网页中。页面重点展示正式模型结果，
+          同时提供低分辨率快速试算、参数校验、算法说明、案例对比和功能自检，便于汇报和复核。
           </div>
         </div>
         """,
@@ -130,23 +141,36 @@ def overview_page() -> None:
 
     cols = st.columns(4)
     with cols[0]:
-        metric_card("规划场景", "S0-S8", "", "blue", "九类")
+        metric_card("规划场景", "S0-S8", "9类", "blue", "场景")
     with cols[1]:
-        metric_card("运行场景", "R0-R4", "", "green", "五类")
+        metric_card("运行场景", "R0-R4", "5类", "green", "调度")
     with cols[2]:
-        metric_card("深度脱碳 CO2", f"{_safe_number(s8.get('Annual CO2 emissions [tCO2/year]')):,.0f}", "t/年", "purple", "S8")
+        metric_card(
+            "深度低碳 CO2",
+            f"{_safe_number(s8.get('Annual CO2 emissions [tCO2/year]')):,.0f}",
+            "t/年",
+            "purple",
+            "碳",
+        )
     with cols[3]:
-        metric_card("低碳调度成本", f"{_safe_number(r4.get('Private total annual cost [million CNY/year]')):.2f}", "百万元/年", "orange", "R4")
+        metric_card(
+            "低碳调度成本",
+            f"{_safe_number(r4.get('Private total annual cost [million CNY/year]')):.2f}",
+            "百万元/年",
+            "orange",
+            "成本",
+        )
 
     section_label("核心功能")
-    f1, f2 = st.columns(2)
+    f1, f2 = st.columns([0.95, 1.05])
     with f1:
         st.markdown(
             """
             <div class="feature-grid">
-              <div class="feature-card"><b>多能流耦合调度</b><span>电、热、冷、气、氢、储能和柔性负荷联合优化。</span></div>
-              <div class="feature-card"><b>碳管理路径分析</b><span>拆解主网购电、CHP、P2X、绿电直连等碳贡献。</span></div>
-              <div class="feature-card"><b>绿电直连规划</b><span>比较园区内绿电、虚拟电厂聚合和绿电基地方案。</span></div>
+              <div class="feature-card"><b>多能流耦合调度</b><span>统一展示电、热、冷、气、氢、碳多维运行结果，支持典型日切换。</span></div>
+              <div class="feature-card"><b>StoreMore约束融合</b><span>新增 RPS、CO2、CEEP、储能技术、氢能和电价上传等手册功能映射。</span></div>
+              <div class="feature-card"><b>算法可解释</b><span>把嵌入算法逐项对应到页面、输入输出和代码位置，便于答辩说明。</span></div>
+              <div class="feature-card"><b>报错自检</b><span>检查数据、字段、图集、模型代码和快速试算回退状态，避免空白页面。</span></div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -156,25 +180,28 @@ def overview_page() -> None:
             planning,
             scenarios=["S0", "S2", "S4", "S6", "S8"],
             metric="Annual CO2 emissions [tCO2/year]",
-            title="规划场景年 CO2 排放对比",
+            title="规划场景年度CO2排放对比",
             color="#22c55e",
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
     section_label("论文结果图集")
     figures = figure_assets()
-    selected = st.selectbox(
-        "选择图表",
-        options=[item.name for item in figures],
-        format_func=lambda name: name.replace("_", " ").replace(".png", ""),
-    )
-    st.image(str(Path("assets/figures") / selected), width="stretch")
+    if figures:
+        selected = st.selectbox(
+            "选择图表",
+            options=[item.name for item in figures],
+            format_func=lambda name: name.replace("_", " ").replace(".png", ""),
+        )
+        st.image(str(Path("assets/figures") / selected), use_container_width=True)
+    else:
+        empty_hint("缺少图集", "未检测到 assets/figures 下的 PNG 结果图。")
 
 
 def system_page() -> None:
-    page_title("系统构建与运行机制设置", "园区基础设备、降碳技术、低碳机制和源荷预测数据")
+    page_title("系统构建与运行机制设置", "园区基础设备、StoreMore约束、低碳机制、源荷预测与按钮流程")
 
-    tab1, tab2, tab3 = st.tabs(["园区组成", "降碳方式", "市场-源-荷信息"])
+    tab1, tab2, tab3, tab4 = st.tabs(["园区组成", "StoreMore约束", "市场-源-荷信息", "求解流程"])
 
     with tab1:
         section_label("园区基础设备")
@@ -196,87 +223,116 @@ def system_page() -> None:
             st.number_input("储电容量 MWh", min_value=0.0, value=60.0)
             st.text_input("荷电范围 MWh", value="10-60")
             st.number_input("储电效率 %", min_value=0.0, max_value=100.0, value=90.0)
-            st.number_input("1h 充放电最大功率 MW", min_value=0.0, value=5.0)
+            st.number_input("1h充放电最大功率 MW", min_value=0.0, value=5.0)
 
         c4, c5, c6 = st.columns(3)
         with c4:
             st.toggle("启用电锅炉", value=True)
             st.text_input("电锅炉耗电功率上下限 MW", value="0-40")
         with c5:
-            st.toggle("启用储热", value=True)
-            st.number_input("储热容量 MWh", min_value=0.0, value=120.0)
-            st.text_input("储热范围 MWh", value="20-120")
-            st.number_input("储热效率 %", min_value=0.0, max_value=100.0, value=95.0)
+            st.toggle("启用蓄热", value=True)
+            st.number_input("蓄热容量 MWh", min_value=0.0, value=120.0)
+            st.text_input("蓄热范围 MWh", value="20-120")
+            st.number_input("蓄热效率 %", min_value=0.0, max_value=100.0, value=95.0)
         with c6:
             st.toggle("启用垃圾焚烧电厂", value=True)
             st.number_input("日总处理量 MW", min_value=0.0, value=2.0)
             st.text_input("单时段出力范围 MW", value="0.06-0.1")
 
-    with tab2:
-        section_label("降碳技术")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown('<div class="soft-panel green-panel"><b>燃气掺氢</b><br><span>用于提升燃气设备低碳能力</span></div>', unsafe_allow_html=True)
-            h2_gt = st.slider("燃气轮机掺氢比例 %", 0, 30, 15)
-            h2_gb = st.slider("燃气锅炉掺氢比例 %", 0, 30, 10)
-        with c2:
-            st.markdown('<div class="soft-panel blue-panel"><b>电转气设备</b><br><span>耦合电力与气体系统</span></div>', unsafe_allow_html=True)
-            elz_power = st.number_input("电解槽最大功率 MW", min_value=0.0, value=120.0)
-            elz_eff = st.number_input("电解效率 %", min_value=0.0, max_value=100.0, value=85.0)
-            meth_eff = st.number_input("甲烷化效率 %", min_value=0.0, max_value=100.0, value=70.0)
-        with c3:
-            st.markdown('<div class="soft-panel purple-panel"><b>碳捕集设备</b><br><span>刻画碳捕集与封存能力</span></div>', unsafe_allow_html=True)
-            cc_eff = st.number_input("碳捕集效率 %", min_value=0.0, max_value=100.0, value=90.0)
-            cc_power = st.number_input("碳捕集最大功率 MW", min_value=0.0, value=150.0)
-            tank_volume = st.number_input("储罐总容积 km3", min_value=0.0, value=29.2)
-
-        section_label("低碳机制")
-        mechanism = st.segmented_control(
-            "机制组合",
-            options=["全部启用", "仅阶梯碳交易", "阶梯碳交易+绿证", "阶梯碳交易+绿氢", "全部禁用"],
-            default="全部启用",
+        section_label("StoreMore储能技术选择")
+        selected_storage = st.multiselect(
+            "选择需要纳入说明或后续扩展的储能技术",
+            ["Li-ion", "Gravity", "CAES", "LAES", "VRFB", "SMES", "Heat storage", "H2 tank"],
+            default=["Li-ion", "Heat storage", "H2 tank"],
         )
+        pills(selected_storage)
+        st.caption("当前正式求解结果已包含电储能、热储能和氢能代理；其余 StoreMore 储能技术作为平台扩展参数预留。")
+
+    with tab2:
+        section_label("StoreMore约束与模型参数")
+        scenario_name = st.text_input("场景名称", value="园区低碳协同调度演示")
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.number_input("碳交易基价 元/吨", min_value=0.0, value=215.0)
-            st.number_input("区间长度 吨", min_value=0.0, value=50.0)
-            st.number_input("区间价格增幅系数", min_value=0.0, value=0.25)
+            enable_rps = st.checkbox("RPS 可再生能源占比约束", value=True)
+            min_res = st.slider("最小可再生能源占比 %", 0, 100, 48)
         with c2:
-            st.number_input("绿电配额比例", min_value=0.0, max_value=1.0, value=0.2)
-            st.number_input("绿电转换系数 本/MWh", min_value=0.0, value=1.0)
-            st.number_input("绿电交易单价 元/本", min_value=0.0, value=150.0)
+            enable_co2 = st.checkbox("CO2 年度排放约束", value=True)
+            max_co2 = st.number_input("年度CO2上限 t", min_value=0.0, value=25000.0, step=500.0)
         with c3:
-            st.number_input("绿氢制氢转换系数 本/MWh", min_value=0.0, value=1.0)
-            st.number_input("绿氢证书单价 元/本", min_value=0.0, value=200.0)
-            st.number_input("绿氢碳抵扣量 吨/本", min_value=0.0, value=0.5)
+            enable_ceep = st.checkbox("CEEP 弃电约束", value=True)
+            max_ceep = st.slider("最大弃电率 %", 0, 50, 8)
 
-        st.caption(f"当前机制组合：{mechanism}；示例参数：掺氢 {h2_gt}%/{h2_gb}%，电解槽 {elz_power:.0f} MW，电解效率 {elz_eff:.0f}%，甲烷化效率 {meth_eff:.0f}%，碳捕集效率 {cc_eff:.0f}%，碳捕集功率 {cc_power:.0f} MW，储罐 {tank_volume:.1f} km3。")
+        c4, c5, c6 = st.columns(3)
+        with c4:
+            st.checkbox("Model heat 启用供热耦合", value=True)
+        with c5:
+            st.checkbox("Optimize generation capacity 优化新增容量", value=True)
+        with c6:
+            st.checkbox("Restrict investments 限制投资边界", value=True)
+
+        st.markdown(
+            f"""
+            <div class="white-panel">
+              <b>当前约束摘要</b><br>
+              场景：{scenario_name}；
+              RPS：{'启用' if enable_rps else '关闭'}，目标 {min_res}%；
+              CO2：{'启用' if enable_co2 else '关闭'}，上限 {max_co2:,.0f} t；
+              CEEP：{'启用' if enable_ceep else '关闭'}，最大弃电率 {max_ceep}%。
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        section_label("StoreMore手册输入表")
+        generator_table = pd.DataFrame(
+            [
+                {"技术": "燃气轮机/CHP", "已装容量MW": 350, "最大新增MW": 80, "效率%": 35, "CO2强度t/MWh": 0.202},
+                {"技术": "光伏", "已装容量MW": 300, "最大新增MW": 120, "效率%": 100, "CO2强度t/MWh": 0.0},
+                {"技术": "风电", "已装容量MW": 500, "最大新增MW": 160, "效率%": 100, "CO2强度t/MWh": 0.0},
+                {"技术": "电解槽", "已装容量MW": 120, "最大新增MW": 50, "效率%": 85, "CO2强度t/MWh": 0.0},
+            ]
+        )
+        st.data_editor(generator_table, hide_index=True, use_container_width=True, disabled=False)
 
     with tab3:
         section_label("源荷预测数据")
-        operation = load_summary("operation")
         dispatch = load_dispatch("operation", "R4")
-        c1, c2 = st.columns([1, 1])
+        c1, c2 = st.columns(2)
         with c1:
-            st.plotly_chart(charts.source_forecast(dispatch), width="stretch")
+            st.plotly_chart(charts.source_forecast(dispatch), use_container_width=True)
         with c2:
-            st.plotly_chart(charts.load_forecast(dispatch), width="stretch")
+            st.plotly_chart(charts.load_forecast(dispatch), use_container_width=True)
 
+        section_label("电价分布上传校验")
+        uploaded = st.file_uploader("上传 StoreMore 格式电价 CSV：第一列 period，第二列为国家或地区代码", type=["csv"])
+        if uploaded is not None:
+            try:
+                price_df = pd.read_csv(uploaded)
+                if price_df.shape[1] >= 2 and price_df.columns[0].lower() == "period":
+                    st.success("电价文件格式校验通过。当前演示不会覆盖正式结果，只作为参数检查。")
+                    st.dataframe(price_df.head(12), use_container_width=True)
+                else:
+                    st.warning("文件已读取，但第一列应为 period，第二列应为价格序列。")
+            except Exception as exc:
+                st.error(f"电价文件读取失败：{exc}")
+
+    with tab4:
+        section_label("按钮流程与快速试算")
         b1, b2, b3, b4, b5 = st.columns([1, 1, 1, 1, 1])
-        if b1.button("一键导入", width="stretch"):
+        if b1.button("一键导入", use_container_width=True):
             st.session_state.data_ready = True
             st.success("预测数据已成功导入。")
-        if b2.button("刷新数据", width="stretch"):
+        if b2.button("刷新数据", use_container_width=True):
             st.session_state.data_ready = True
             st.info("已刷新为内置正式结果数据。")
-        if b3.button("确认调度数据", width="stretch", disabled=not st.session_state.data_ready):
+        if b3.button("确认调度数据", use_container_width=True, disabled=not st.session_state.data_ready):
             st.session_state.data_confirmed = True
             st.success("调度数据已确认。")
-        if b4.button("参数校验", width="stretch", disabled=not st.session_state.data_confirmed):
+        if b4.button("参数校验", use_container_width=True, disabled=not st.session_state.data_confirmed):
             st.session_state.params_valid = True
             st.success("参数校验通过。")
-        if b5.button("开始优化调度", width="stretch", disabled=not st.session_state.params_valid):
-            with st.spinner("正在执行低分辨率快速试算，若云端资源不足将自动回退到正式结果。"):
+        if b5.button("开始优化调度", use_container_width=True, disabled=not st.session_state.params_valid):
+            with st.spinner("正在执行低分辨率快速试算；若云端资源不足，将自动回退到正式结果。"):
                 started = time.time()
                 result = run_quick_trial("S4", {"milp_time_limit": 20.0, "mip_rel_gap": 0.02})
                 result["elapsed"] = time.time() - started
@@ -285,7 +341,7 @@ def system_page() -> None:
             if result.get("success"):
                 st.success(f"快速试算完成，用时 {result['elapsed']:.1f} 秒。")
             else:
-                st.warning("快速试算未完成，已回退展示正式结果。")
+                st.warning("快速试算未完成，页面已回退展示正式结果。")
 
         quick = st.session_state.quick_trial
         if quick:
@@ -295,22 +351,52 @@ def system_page() -> None:
                 co2 = metric_from_table(metrics, "Annual CO2 emissions")
                 c1, c2 = st.columns(2)
                 with c1:
-                    metric_card("快速试算总成本", f"{total_cost * 7.8 / 1e6:.2f}", "百万元/年", "blue", "S4")
+                    metric_card("快速试算总成本", f"{total_cost * 7.8 / 1e6:.2f}", "百万元/年", "blue", "试算")
                 with c2:
-                    metric_card("快速试算 CO2", f"{co2:,.0f}", "t/年", "green", "S4")
+                    metric_card("快速试算CO2", f"{co2:,.0f}", "t/年", "green", "碳")
             else:
                 st.caption(st.session_state.quick_trial_message)
 
-        st.plotly_chart(
-            charts.summary_comparison_bar(
-                operation,
-                scenarios=["R0", "R1", "R2", "R3", "R4"],
-                metric="Private total annual cost [million CNY/year]",
-                title="运行场景私有总成本对比",
-                color="#0ea5e9",
-            ),
-            width="stretch",
+        st.markdown(
+            """
+            <div class="white-panel">
+              <b>求解流程说明</b><br>
+              StoreMore手册中包含“全年完美预见规划”和“48小时滚动调度”两阶段思想。
+              本平台为保证 Streamlit Cloud 稳定性，展示正式全年结果为主；按钮触发的是低分辨率快速试算，
+              若资源不足会明确提示并回退到正式结果，不让页面空白或报错。
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
+
+
+def algorithm_page() -> None:
+    page_title("算法与界面对应关系", "整理平台嵌入算法、对应界面、输入输出和代码位置")
+    algorithms = algorithm_dataframe()
+    st.dataframe(algorithms, hide_index=True, use_container_width=True, height=420)
+
+    section_label("按界面快速说明")
+    selected = st.selectbox("选择一个界面查看它调用或展示的算法", sorted({p for pages in algorithms["对应界面"] for p in pages.split("、")}))
+    subset = algorithms[algorithms["对应界面"].str.contains(selected, regex=False)]
+    for _, row in subset.iterrows():
+        st.markdown(
+            f"""
+            <div class="algorithm-card">
+              <b>{row['算法模块']}</b>
+              <span>{row['核心方法']}</span><br><br>
+              <span><b>输入：</b>{row['主要输入']}</span><br>
+              <span><b>输出：</b>{row['主要输出']}</span><br>
+              <span><b>代码：</b>{row['代码位置']}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    section_label("老师提问时的回答口径")
+    st.info(
+        "平台不是只嵌入一个算法，而是把综合能源线性规划、StoreMore两阶段思想、RPS/CO2/CEEP约束、"
+        "储能SOC、P2X绿氢、碳管理后处理、绿电直连成本筛选和源荷数据生成组合成一个决策支持流程。"
+    )
 
 
 def dispatch_page() -> None:
@@ -319,24 +405,25 @@ def dispatch_page() -> None:
     dispatch = load_dispatch("operation", scenario)
     day_options = dispatch["day_name"].dropna().unique().tolist()
     selected_day = st.selectbox("典型日", day_options, index=0)
-    carrier = st.segmented_control("能流类型", ["电", "热", "气", "氢", "碳"], default="电")
+    carrier = st.radio("能流类型", ["电", "热", "气", "氢", "碳"], horizontal=True)
 
-    st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, carrier), width="stretch")
+    st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, carrier), use_container_width=True)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, "热"), width="stretch")
+        st.plotly_chart(charts.storage_profile(dispatch, selected_day), use_container_width=True)
     with c2:
-        st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, "气"), width="stretch")
-    with c3:
-        st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, "碳"), width="stretch")
+        st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, "碳"), use_container_width=True)
 
     section_label("论文结果图快速查看")
     figures = figure_assets()
-    cols = st.columns(3)
-    for index, figure in enumerate(figures[:6]):
-        with cols[index % 3]:
-            st.image(str(Path("assets/figures") / figure.name), caption=figure.name[:2] + " 结果图", width="stretch")
+    if figures:
+        cols = st.columns(3)
+        for index, figure in enumerate(figures[:6]):
+            with cols[index % 3]:
+                st.image(str(figure), caption=figure.name[:2] + " 结果图", use_container_width=True)
+    else:
+        empty_hint("缺少图集", "未检测到论文结果图。")
 
 
 def metrics_page() -> None:
@@ -375,7 +462,7 @@ def metrics_page() -> None:
         "VPP aggregated green-direct cost [million CNY/year]",
         "Remote green-base direct cost [million CNY/year]",
     ]
-    st.plotly_chart(charts.metric_strip(operation, "R4", econ_metrics), width="stretch")
+    st.plotly_chart(charts.metric_strip(operation, "R4", econ_metrics), use_container_width=True)
 
     total_cost = _safe_number(r4.get("Private total annual cost [million CNY/year]"))
     st.markdown(
@@ -392,28 +479,28 @@ def metrics_page() -> None:
     section_label("环境效益指标")
     env_cols = st.columns(3)
     with env_cols[0]:
-        metric_card("总 CO2 排放量", f"{_safe_number(r4.get('Annual CO2 emissions [tCO2/year]')):,.2f}", "tCO2/年", "red", "排")
+        metric_card("总CO2排放量", f"{_safe_number(r4.get('Annual CO2 emissions [tCO2/year]')):,.2f}", "tCO2/年", "red", "排")
     with env_cols[1]:
-        metric_card("总 CO2 捕集量", f"{_safe_number(r4.get('Endogenous P2X avoided emissions [tCO2/year]')):,.2f}", "tCO2/年", "blue", "捕")
+        metric_card("P2X减排潜力", f"{_safe_number(r4.get('Endogenous P2X avoided emissions [tCO2/year]')):,.2f}", "tCO2/年", "blue", "减")
     with env_cols[2]:
-        metric_card("总 CO2 封存量", f"{_safe_number(r4.get('Green-direct avoided emissions proxy [tCO2/year]')):,.2f}", "tCO2/年", "green", "封")
+        metric_card("绿电直连减排代理", f"{_safe_number(r4.get('Green-direct avoided emissions proxy [tCO2/year]')):,.2f}", "tCO2/年", "green", "绿")
 
     carbon = load_carbon_management("decomposition")
-    st.plotly_chart(charts.carbon_decomposition(carbon), width="stretch")
+    st.plotly_chart(charts.carbon_decomposition(carbon), use_container_width=True)
 
 
 def case_page() -> None:
-    page_title("常见案例对比", "对比不同常见案例下的调度结果指标")
+    page_title("常见案例对比", "对比不同案例下的调度结果指标")
     planning = load_summary("planning")
     cases = ["S0", "S1", "S2", "S3", "S4", "S6", "S8"]
     labels = [f"案例{i}" for i in range(1, 8)]
     metric_map = {
         "当日总成本（万元）": ("Private total annual cost [million CNY/year]", 100 / 365),
-        "火电机组成本（万元）": ("Variable operating annual cost [million CNY/year]", 100 / 365),
-        "总 CO2 排放量（吨）": ("Annual CO2 emissions [tCO2/year]", 1),
-        "今日总发电量（MWh）": ("Annual renewable local absorption [MWh/year]", 1 / 365),
+        "运行成本（万元）": ("Variable operating annual cost [million CNY/year]", 100 / 365),
+        "总CO2排放量（吨）": ("Annual CO2 emissions [tCO2/year]", 1),
+        "今日绿电吸纳量（MWh）": ("Annual renewable local absorption [MWh/year]", 1 / 365),
         "绿电占比（%）": ("Renewable local absorption rate [%]", 1),
-        "弃风率（%）": ("Renewable curtailment rate [%]", 1),
+        "弃风弃光率（%）": ("Renewable curtailment rate [%]", 1),
         "绿电直连成本（百万元）": ("Best green-direct annual cost [million CNY/year]", 1),
     }
     table = pd.DataFrame({"对比指标": list(metric_map.keys())})
@@ -424,16 +511,16 @@ def case_page() -> None:
             values.append(_safe_number(row.get(source)) * scale)
         table[label] = [f"{value:.2f}" if value else "-" for value in values]
 
-    st.dataframe(table, hide_index=True, width="stretch", height=340)
+    st.dataframe(table, hide_index=True, use_container_width=True, height=340)
 
     descriptions = {
         "案例1": "低碳机制全部启用，配置垃圾焚烧电厂，降碳技术全部启用。",
-        "案例2": "低碳机制为阶梯碳交易与绿证，配置垃圾焚烧电厂，降碳技术全部启用。",
-        "案例3": "低碳机制为阶梯碳交易与绿氢，配置垃圾焚烧电厂，降碳技术全部启用。",
-        "案例4": "低碳机制全部禁用，配置垃圾焚烧电厂，降碳技术全部启用。",
-        "案例5": "低碳机制全部禁用，不配置垃圾焚烧电厂，降碳技术全部启用。",
-        "案例6": "低碳机制全部禁用，不配置垃圾焚烧电厂，电转气和碳捕集启用。",
-        "案例7": "深度脱碳与 P2X 绿氢替代协同方案。",
+        "案例2": "启用阶梯碳交易与绿证机制，配置垃圾焚烧电厂。",
+        "案例3": "启用阶梯碳交易与绿氢机制，配置垃圾焚烧电厂。",
+        "案例4": "关闭低碳机制，保留垃圾焚烧电厂和降碳技术。",
+        "案例5": "关闭低碳机制，不配置垃圾焚烧电厂。",
+        "案例6": "关闭低碳机制，启用电转气和碳捕集设备。",
+        "案例7": "深度脱碳：P2X、绿电直连与工业园区热替代协同。",
     }
     for key, text in descriptions.items():
         st.markdown(f"**{key}：** {text}")
@@ -441,16 +528,20 @@ def case_page() -> None:
     if st.button("案例对比", type="primary"):
         st.success("案例对比已完成，表格已根据正式模型结果刷新。")
 
-    st.plotly_chart(
-        charts.summary_comparison_bar(
-            planning,
-            scenarios=cases,
-            metric="Annual CO2 emissions [tCO2/year]",
-            title="七类案例 CO2 排放对比",
-            color="#a855f7",
-        ),
-        width="stretch",
-    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(
+            charts.summary_comparison_bar(
+                planning,
+                scenarios=cases,
+                metric="Annual CO2 emissions [tCO2/year]",
+                title="七类案例CO2排放对比",
+                color="#a855f7",
+            ),
+            use_container_width=True,
+        )
+    with c2:
+        st.plotly_chart(charts.scenario_scatter(planning[planning["Scenario"].isin(cases)]), use_container_width=True)
 
 
 def green_direct_page() -> None:
@@ -458,18 +549,18 @@ def green_direct_page() -> None:
     planning = load_summary("planning")
     s8 = _scenario_row(planning, "S8")
 
-    c1, c2, c3 = st.columns(3)
     mode = st.radio(
         "选择绿电直连方式",
         ["园区内新建绿电", "虚拟电厂聚合绿电", "绿电基地"],
         horizontal=True,
     )
+    c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown('<div class="mode-card mode-green"><b>园区内新建绿电</b><span>就地生产，就地消纳</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="mode-card mode-green"><b>园区内新建绿电</b><span>就地生产，就地消纳，线损低。</span></div>', unsafe_allow_html=True)
     with c2:
-        st.markdown('<div class="mode-card mode-blue"><b>虚拟电厂聚合绿电</b><span>聚合分散绿电统一调度</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="mode-card mode-blue"><b>虚拟电厂聚合绿电</b><span>聚合分散绿电资源统一调度。</span></div>', unsafe_allow_html=True)
     with c3:
-        st.markdown('<div class="mode-card mode-purple"><b>绿电基地</b><span>远距离、大容量送电</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="mode-card mode-purple"><b>绿电基地</b><span>远距离、大容量、专线输送。</span></div>', unsafe_allow_html=True)
 
     section_label("选择详情")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -500,7 +591,7 @@ def green_direct_page() -> None:
     best = min(costs, key=costs.get)
 
     if st.button("计算成本", type="primary"):
-        st.success(f"已按 {years} 年周期计算，最优绿电直连方式为：{best}。")
+        st.success(f"已按 {years} 年周期计算，当前最优绿电直连方式为：{best}。")
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -510,13 +601,71 @@ def green_direct_page() -> None:
     with c3:
         green_direct_cost_card("绿电基地", base_cost, "purple", selected=mode == "绿电基地")
 
-    st.markdown(
-        f"""
-        <div class="best-strip">最优绿电直连方式是：<b>{best}</b></div>
-        """,
-        unsafe_allow_html=True,
+    st.markdown(f'<div class="best-strip">最优绿电直连方式是：<b>{best}</b></div>', unsafe_allow_html=True)
+    st.caption(
+        f"当前参数：风电 {wind_cap:.0f} MW，光伏 {pv_cap:.0f} MW，专线 {line_cap:.0f} MW，"
+        f"线损 {loss_rate:.1f}%，电价 {price:.2f} 元/kWh。正式模型推荐："
+        f"{_mode_name(_safe_number(s8.get('Best green-direct mode index'), 1))}。"
     )
-    st.caption(f"当前参数：风电 {wind_cap:.0f} MW，光伏 {pv_cap:.0f} MW，专线 {line_cap:.0f} MW，线损 {loss_rate:.1f}%，电价 {price:.2f} 元/kWh。正式模型推荐：{_mode_name(_safe_number(s8.get('Best green-direct mode index'), 1))}。")
+
+
+def storemore_page() -> None:
+    page_title("StoreMore融合与功能自检", "融合上传手册内容，并检查平台中可能导致报错的关键环节")
+
+    section_label("StoreMore功能融合清单")
+    st.dataframe(storemore_feature_dataframe(), hide_index=True, use_container_width=True, height=310)
+
+    section_label("两阶段求解思想")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            """
+            <div class="soft-panel blue-panel">
+              <b>第一阶段：Perfect foresight 全年规划</b>
+              <span>以全年8760小时或典型日权重为规划视角，决定容量、成本、碳排和绿电直连结果。</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            """
+            <div class="soft-panel green-panel">
+              <b>第二阶段：Myopic 滚动运行</b>
+              <span>参考 StoreMore 48小时滚动思想，平台用典型日调度与快速试算展示运行侧可行性。</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    section_label("功能自检")
+    checks = run_static_checks()
+    st.dataframe(checks, hide_index=True, use_container_width=True, height=360)
+    if (checks["状态"] == "通过").all():
+        status_box("静态检查通过", "数据、图集和关键字段均可读取。", ok=True)
+    else:
+        status_box("存在需处理项", "请查看上表中状态不是“通过”的检查项。", ok=False)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("运行S0快速试算", use_container_width=True):
+            with st.spinner("正在试算 S0..."):
+                result = run_quick_trial("S0", {"milp_time_limit": 15.0})
+            if result.get("success"):
+                st.success("S0快速试算成功。")
+            else:
+                st.warning(result.get("message", "S0快速试算失败。"))
+    with c2:
+        if st.button("运行S8快速试算", use_container_width=True):
+            with st.spinner("正在试算 S8..."):
+                result = run_quick_trial("S8", {"milp_time_limit": 15.0})
+            if result.get("success"):
+                st.success("S8快速试算成功。")
+            else:
+                st.warning(result.get("message", "S8快速试算失败。"))
+
+    section_label("旧平台融合说明")
+    st.info(old_platform_note())
 
 
 def innovation_page() -> None:
@@ -527,12 +676,12 @@ def innovation_page() -> None:
         st.markdown(
             """
             <div class="route-card">
-              <b>前端 UI 展示层</b>
-              <span>Streamlit 构建可视化交互界面，承担参数配置、场景切换和结果呈现。</span>
+              <b>前端UI展示层</b>
+              <span>Streamlit 构建可视化交互界面，承担参数配置、场景切换、流程按钮和结果呈现。</span>
             </div>
             <div class="route-card">
               <b>中间数据层</b>
-              <span>CSV 正式结果、调度明细和碳管理结果统一读取，服务图表和指标卡。</span>
+              <span>CSV正式结果、调度明细、碳管理结果和论文图集统一读取，服务图表和指标卡。</span>
             </div>
             <div class="route-card">
               <b>后端算法层</b>
@@ -559,8 +708,8 @@ def innovation_page() -> None:
     ideas = [
         ("输入层", "采集园区设备参数、负荷预测、绿电价格、碳排放因子等基础数据。"),
         ("核心模型层", "构建低碳规划和运行调度模型，处理多目标优化与约束条件。"),
-        ("绿电补充层", "集成绿电直连补充能力，比较不同接入方案的成本效益。"),
-        ("输出层", "生成调度结果图、经济指标、环境指标与常见案例对比。"),
+        ("绿电补充层", "集成绿电直连能力，比较不同接入方案的成本效益。"),
+        ("输出层", "生成调度结果图、经济指标、环境指标、案例对比与算法说明。"),
     ]
     for col, (title, text) in zip(cols, ideas):
         with col:
@@ -569,9 +718,9 @@ def innovation_page() -> None:
     section_label("作品创新点")
     cols = st.columns(3)
     innovations = [
-        ("01", "五维多能流联合优化调度模型", "突破传统电热调度局限，实现电、热、气、氢、碳全维度协同优化。"),
-        ("02", "多低碳机制与技术联合模拟", "支持降碳技术启用与禁用配置，量化成本、碳排放和降碳效果。"),
-        ("03", "园区绿电直连一体化规划算法", "支持不同规划周期测算，自动推荐最优绿电直连方案。"),
+        ("01", "多维多能流联合优化调度模型", "突破单一电力调度展示，呈现电、热、气、氢、碳全维度协同优化。"),
+        ("02", "多低碳机制与技术联合模拟", "支持RPS、CO2、CEEP、碳交易、绿证、P2X和碳管理的联合展示。"),
+        ("03", "园区绿电直连一体化规划算法", "支持不同规划周期测算，自动推荐成本更优的绿电直连方案。"),
     ]
     for col, (num, title, text) in zip(cols, innovations):
         with col:
@@ -586,6 +735,8 @@ def main() -> None:
             overview_page()
         elif page == "系统构建与运行机制设置":
             system_page()
+        elif page == "算法与界面对应关系":
+            algorithm_page()
         elif page == "调度结果图":
             dispatch_page()
         elif page == "调度综合指标分析":
@@ -594,11 +745,13 @@ def main() -> None:
             case_page()
         elif page == "绿电直连补充方式":
             green_direct_page()
+        elif page == "StoreMore融合与功能自检":
+            storemore_page()
         else:
             innovation_page()
     except FileNotFoundError as exc:
-        empty_hint("缺少数据文件", f"请确认项目内 data/results 和 assets/figures 已随仓库提交。详细信息：{exc}")
-    except Exception as exc:  # Streamlit should show a friendly page instead of a blank app.
+        empty_hint("缺少数据文件", f"请确认 data/results 和 assets/figures 已随仓库提交。详细信息：{exc}")
+    except Exception as exc:
         empty_hint("页面加载失败", str(exc))
         if st.checkbox("显示调试信息"):
             st.exception(exc)

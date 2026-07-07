@@ -43,9 +43,9 @@ def build_scenario(base_key: str, overrides: dict[str, Any] | None = None) -> di
     elif key.startswith("R"):
         scenarios = get_operation_scenarios_v17_3_1(_load_fixed_capacities())
     else:
-        raise ValueError(f"unsupported scenario key: {base_key}")
+        raise ValueError(f"不支持的场景编号：{base_key}")
     if key not in scenarios:
-        raise KeyError(f"scenario not found: {base_key}")
+        raise KeyError(f"未找到场景：{base_key}")
     scenario = dict(scenarios[key])
     for name, value in overrides.items():
         if value is not None:
@@ -79,7 +79,7 @@ def run_quick_trial(
     except Exception as exc:
         return {
             "success": False,
-            "message": f"快速试算失败，已回退到正式结果：{exc}",
+            "message": f"快速试算失败，已回退到正式结果展示：{exc}",
             "result": None,
             "profiles": None,
             "scenario": None,
