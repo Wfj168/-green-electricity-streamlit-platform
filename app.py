@@ -7,17 +7,23 @@ import pandas as pd
 import streamlit as st
 
 from src import charts
-from src.algorithm_catalog import algorithm_dataframe, storemore_feature_dataframe
 from src.data_loader import (
     figure_assets,
     load_carbon_management,
     load_dispatch,
-    load_metrics,
     load_summary,
     metric_from_table,
 )
-from src.diagnostics import old_platform_note, run_static_checks
 from src.model_adapter import run_quick_trial
+from src.storemore_engine import (
+    StoreMoreInputs,
+    csv_template,
+    default_capex_table,
+    default_fuel_table,
+    default_generator_table,
+    default_storage_table,
+    run_storemore_simulation,
+)
 try:
     from src.ui_components import (
         badge,
@@ -28,7 +34,6 @@ try:
         page_title,
         pills,
         section_label,
-        status_box,
     )
 except ImportError:
     from src.ui_components import (
@@ -43,12 +48,6 @@ except ImportError:
 
     def pills(items: list[str]) -> None:
         st.write("、".join(items))
-
-    def status_box(title: str, body: str, ok: bool = True) -> None:
-        if ok:
-            st.success(f"{title}：{body}")
-        else:
-            st.warning(f"{title}：{body}")
 
 
 APP_TITLE = "园区低碳规划与绿电直连优化平台"
@@ -120,12 +119,11 @@ def _sidebar() -> str:
             [
                 "平台概述",
                 "系统构建与运行机制设置",
-                "算法与界面对应关系",
+                "StoreMore仿真优化",
                 "调度结果图",
                 "调度综合指标分析",
                 "常见案例对比分析",
                 "绿电直连补充方式",
-                "StoreMore融合与功能自检",
                 "技术路线与创新点",
             ],
             label_visibility="collapsed",
@@ -188,9 +186,9 @@ def overview_page() -> None:
             """
             <div class="feature-grid">
               <div class="feature-card"><b>多能流耦合调度</b><span>统一展示电、热、冷、气、氢、碳多维运行结果，支持典型日切换。</span></div>
-              <div class="feature-card"><b>StoreMore约束融合</b><span>新增 RPS、CO2、CEEP、储能技术、氢能和电价上传等手册功能映射。</span></div>
-              <div class="feature-card"><b>算法可解释</b><span>把嵌入算法逐项对应到页面、输入输出和代码位置，便于答辩说明。</span></div>
-              <div class="feature-card"><b>报错自检</b><span>检查数据、字段、图集、模型代码和快速试算回退状态，避免空白页面。</span></div>
+              <div class="feature-card"><b>StoreMore仿真优化</b><span>支持 RPS、CO2、CEEP、容量规划、48小时滚动调度、CSV上传和结果下载。</span></div>
+              <div class="feature-card"><b>低碳机制配置</b><span>配置碳交易、绿证、绿氢、P2X、碳捕集和绿电直连等低碳机制。</span></div>
+              <div class="feature-card"><b>工程化交付</b><span>正式结果展示与在线仿真并行，页面面向实际使用，不包含汇报话术。</span></div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -388,35 +386,6 @@ def system_page() -> None:
             """,
             unsafe_allow_html=True,
         )
-
-
-def algorithm_page() -> None:
-    page_title("算法与界面对应关系", "整理平台嵌入算法、对应界面、输入输出和代码位置")
-    algorithms = algorithm_dataframe()
-    st.dataframe(algorithms, hide_index=True, use_container_width=True, height=420)
-
-    section_label("按界面快速说明")
-    selected = st.selectbox("选择一个界面查看它调用或展示的算法", sorted({p for pages in algorithms["对应界面"] for p in pages.split("、")}))
-    subset = algorithms[algorithms["对应界面"].str.contains(selected, regex=False)]
-    for _, row in subset.iterrows():
-        st.markdown(
-            f"""
-            <div class="algorithm-card">
-              <b>{row['算法模块']}</b>
-              <span>{row['核心方法']}</span><br><br>
-              <span><b>输入：</b>{row['主要输入']}</span><br>
-              <span><b>输出：</b>{row['主要输出']}</span><br>
-              <span><b>代码：</b>{row['代码位置']}</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    section_label("老师提问时的回答口径")
-    st.info(
-        "平台不是只嵌入一个算法，而是把综合能源线性规划、StoreMore两阶段思想、RPS/CO2/CEEP约束、"
-        "储能SOC、P2X绿氢、碳管理后处理、绿电直连成本筛选和源荷数据生成组合成一个决策支持流程。"
-    )
 
 
 def dispatch_page() -> None:
@@ -629,63 +598,192 @@ def green_direct_page() -> None:
     )
 
 
-def storemore_page() -> None:
-    page_title("StoreMore融合与功能自检", "融合上传手册内容，并检查平台中可能导致报错的关键环节")
+def storemore_simulation_page() -> None:
+    page_title("StoreMore仿真优化", "容量规划、48小时滚动调度、CSV上传、结果可视化与结果下载")
 
-    section_label("StoreMore功能融合清单")
-    st.dataframe(storemore_feature_dataframe(), hide_index=True, use_container_width=True, height=310)
+    left, right = st.columns([0.92, 1.35])
+    with left:
+        section_label("场景与约束")
+        scenario_name = st.text_input("Scenario name", value="green_park_dispatch")
+        total_demand = st.number_input("Total electricity demand [MWh/year]", min_value=1.0, value=1_000_000.0, step=10_000.0)
+        service_life = st.number_input("Service life [years]", min_value=1, max_value=60, value=25)
+        import_price = st.number_input("Import price [EUR/MWh]", min_value=0.0, value=90.0)
+        export_price = st.number_input("Export price [EUR/MWh]", min_value=0.0, value=70.0)
+        import_export_capacity = st.number_input("Import/export capacity [MW]", min_value=0.0, value=500.0)
 
-    section_label("两阶段求解思想")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(
-            """
-            <div class="soft-panel blue-panel">
-              <b>第一阶段：Perfect foresight 全年规划</b>
-              <span>以全年8760小时或典型日权重为规划视角，决定容量、成本、碳排和绿电直连结果。</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        rps_constraint = st.checkbox("RPS constraint", value=True)
+        co2_constraint = st.checkbox("CO2 constraint", value=True)
+        ceep_constraint = st.checkbox("CEEP constraint", value=True)
+        optimize_capacity = st.checkbox("Optimize generation capacity", value=True)
+        restrict_investments = st.checkbox("Restrict investments", value=True)
+
+        min_res_share = st.number_input("Minimum RES share [%]", min_value=0.0, max_value=100.0, value=65.0)
+        max_co2 = st.number_input("Maximum CO2 emissions [tCO2/year]", min_value=0.0, value=1_000_000.0, step=10_000.0)
+        max_ceep = st.number_input("Maximum CEEP [%]", min_value=0.0, max_value=100.0, value=15.0)
+        rolling_days = st.number_input("Rolling days for myopic phase", min_value=1, max_value=30, value=7)
+
+        section_label("CSV输入")
+        uploaded_csv = st.file_uploader("Upload custom electricity price CSV or full profile CSV", type=["csv"])
+        country_code = st.selectbox("Country code", ["HR", "DE", "FR", "AT", "BE", "BG", "CZ", "DK", "ES", "SE"])
+        template = csv_template(total_demand, import_price, export_price)
+        st.download_button(
+            "Download input CSV template",
+            data=template.to_csv(index=False),
+            file_name="storemore_input_template.csv",
+            mime="text/csv",
+            use_container_width=True,
         )
-    with c2:
-        st.markdown(
-            """
-            <div class="soft-panel green-panel">
-              <b>第二阶段：Myopic 滚动运行</b>
-              <span>参考 StoreMore 48小时滚动思想，平台用典型日调度与快速试算展示运行侧可行性。</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
+
+    with right:
+        section_label("发电技术参数")
+        generator_df = st.data_editor(
+            default_generator_table(),
+            num_rows="fixed",
+            use_container_width=True,
+            key="storemore_generator_editor",
         )
 
-    section_label("功能自检")
-    checks = run_static_checks()
-    st.dataframe(checks, hide_index=True, use_container_width=True, height=360)
-    if (checks["状态"] == "通过").all():
-        status_box("静态检查通过", "数据、图集和关键字段均可读取。", ok=True)
-    else:
-        status_box("存在需处理项", "请查看上表中状态不是“通过”的检查项。", ok=False)
+        section_label("储能技术参数")
+        storage_selected = st.multiselect(
+            "Enabled storage technologies",
+            default_storage_table()["Unit Name"].tolist(),
+            default=["Liion storage"],
+        )
+        pills(storage_selected)
+        storage_df = st.data_editor(
+            default_storage_table(),
+            num_rows="fixed",
+            use_container_width=True,
+            key="storemore_storage_editor",
+        )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("运行S0快速试算", use_container_width=True):
-            with st.spinner("正在试算 S0..."):
-                result = run_quick_trial("S0", {"milp_time_limit": 15.0})
-            if result.get("success"):
-                st.success("S0快速试算成功。")
-            else:
-                st.warning(result.get("message", "S0快速试算失败。"))
-    with c2:
-        if st.button("运行S8快速试算", use_container_width=True):
-            with st.spinner("正在试算 S8..."):
-                result = run_quick_trial("S8", {"milp_time_limit": 15.0})
-            if result.get("success"):
-                st.success("S8快速试算成功。")
-            else:
-                st.warning(result.get("message", "S8快速试算失败。"))
+        c1, c2 = st.columns(2)
+        with c1:
+            section_label("年化投资成本")
+            capex_df = st.data_editor(
+                default_capex_table(),
+                num_rows="fixed",
+                use_container_width=True,
+                key="storemore_capex_editor",
+            )
+        with c2:
+            section_label("燃料成本")
+            fuel_df = st.data_editor(
+                default_fuel_table(),
+                num_rows="fixed",
+                use_container_width=True,
+                key="storemore_fuel_editor",
+            )
 
-    section_label("旧平台融合说明")
-    st.info(old_platform_note())
+    st.divider()
+    col_start, col_reset = st.columns([1, 1])
+    start = col_start.button("Start simulation", type="primary", use_container_width=True)
+    if col_reset.button("Clear results", use_container_width=True):
+        st.session_state.pop("storemore_result", None)
+        st.info("Results cleared.")
+
+    if start:
+        inputs = StoreMoreInputs(
+            scenario_name=scenario_name,
+            total_demand=total_demand,
+            service_life=int(service_life),
+            import_price=import_price,
+            export_price=export_price,
+            import_export_capacity=import_export_capacity,
+            rps_constraint=rps_constraint,
+            min_res_share=min_res_share,
+            co2_constraint=co2_constraint,
+            max_co2=max_co2,
+            ceep_constraint=ceep_constraint,
+            max_ceep=max_ceep,
+            optimize_capacity=optimize_capacity,
+            restrict_investments=restrict_investments,
+            rolling_days=int(rolling_days),
+            country_code=country_code,
+        )
+        status_text = st.empty()
+        progress = st.progress(0)
+        with st.spinner("Running StoreMore optimization..."):
+            status_text.info("Solving first phase - capacity planning")
+            progress.progress(30)
+            time.sleep(0.05)
+            status_text.info("MODEL RUNNING - 48h rolling dispatch")
+            progress.progress(55)
+            result = run_storemore_simulation(inputs, generator_df, storage_df, fuel_df, uploaded_csv)
+            progress.progress(100)
+        st.session_state["storemore_result"] = result
+        if result.get("success"):
+            status_text.success("MODEL SOLVED")
+        else:
+            status_text.error("MODEL FAILED")
+
+    result = st.session_state.get("storemore_result")
+    if result:
+        if not result.get("success"):
+            st.error(result.get("message", "Optimization failed."))
+            st.warning("Try reducing Minimum RES share, increasing capacity limits, or disabling strict constraints.")
+            return
+
+        st.success("48h rolling optimization solved successfully.")
+        summary_df = result["summary"]
+        investment_df = result["investment"]
+        rolling_log_df = result["rolling_log"]
+        dispatch_df = result["dispatch"]
+        metric_df = result["metrics"]
+        figures = result["figures"]
+
+        section_label("输入摘要")
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        section_label("结果指标")
+        cols = st.columns(4)
+        metric_lookup = {row["Metric"]: row["Value"] for _, row in metric_df.iterrows()}
+        metric_cards = [
+            ("Renewable generation", metric_lookup.get("Total renewable generation [MWh]", 0.0), "MWh", "green"),
+            ("Gas generation", metric_lookup.get("Total gas generation [MWh]", 0.0), "MWh", "orange"),
+            ("Unmet demand", metric_lookup.get("Total unmet demand [MWh]", 0.0), "MWh", "red"),
+            ("Renewable share", metric_lookup.get("Renewable share [%]", 0.0), "%", "blue"),
+        ]
+        for col, (label, value, unit, color) in zip(cols, metric_cards):
+            with col:
+                metric_card(label, f"{value:,.2f}", unit, color, label[:2])
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("### Investment Results")
+            st.dataframe(investment_df, use_container_width=True, hide_index=True)
+            st.markdown("### Rolling Optimization Log")
+            st.dataframe(rolling_log_df, use_container_width=True, hide_index=True)
+        with c2:
+            st.markdown("### Key Indicators")
+            st.dataframe(metric_df, use_container_width=True, hide_index=True)
+            st.markdown("### Dispatch Results Preview")
+            st.dataframe(dispatch_df.head(24), use_container_width=True, hide_index=True)
+
+        section_label("结果图")
+        fig_cols = st.columns(2)
+        caption_map = {
+            "power_generation": "Power generation",
+            "storage_input_output": "Input/output to storage",
+            "generation_investment": "Investments into generation capacities",
+            "storage_investment": "Investments into storage capacities",
+            "storage_soc": "Storage SOC",
+            "demand_supply_balance": "Demand and supply balance",
+            "excess_unmet": "Excess electricity and unmet demand",
+        }
+        for idx, (file_name, image_bytes) in enumerate(figures.items()):
+            base_name = file_name.rsplit(".", 1)[0]
+            with fig_cols[idx % 2]:
+                st.image(image_bytes, caption=caption_map.get(base_name, base_name), use_container_width=True)
+
+        st.download_button(
+            "Download Results",
+            data=result["zip"],
+            file_name=f"{scenario_name}_results.zip",
+            mime="application/zip",
+            type="primary",
+            use_container_width=True,
+        )
 
 
 def innovation_page() -> None:
@@ -755,8 +853,8 @@ def main() -> None:
             overview_page()
         elif page == "系统构建与运行机制设置":
             system_page()
-        elif page == "算法与界面对应关系":
-            algorithm_page()
+        elif page == "StoreMore仿真优化":
+            storemore_simulation_page()
         elif page == "调度结果图":
             dispatch_page()
         elif page == "调度综合指标分析":
@@ -765,8 +863,6 @@ def main() -> None:
             case_page()
         elif page == "绿电直连补充方式":
             green_direct_page()
-        elif page == "StoreMore融合与功能自检":
-            storemore_page()
         else:
             innovation_page()
     except FileNotFoundError as exc:
