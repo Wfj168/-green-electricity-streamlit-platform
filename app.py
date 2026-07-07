@@ -18,17 +18,37 @@ from src.data_loader import (
 )
 from src.diagnostics import old_platform_note, run_static_checks
 from src.model_adapter import run_quick_trial
-from src.ui_components import (
-    badge,
-    empty_hint,
-    green_direct_cost_card,
-    inject_global_css,
-    metric_card,
-    page_title,
-    pills,
-    section_label,
-    status_box,
-)
+try:
+    from src.ui_components import (
+        badge,
+        empty_hint,
+        green_direct_cost_card,
+        inject_global_css,
+        metric_card,
+        page_title,
+        pills,
+        section_label,
+        status_box,
+    )
+except ImportError:
+    from src.ui_components import (
+        badge,
+        empty_hint,
+        green_direct_cost_card,
+        inject_global_css,
+        metric_card,
+        page_title,
+        section_label,
+    )
+
+    def pills(items: list[str]) -> None:
+        st.write("、".join(items))
+
+    def status_box(title: str, body: str, ok: bool = True) -> None:
+        if ok:
+            st.success(f"{title}：{body}")
+        else:
+            st.warning(f"{title}：{body}")
 
 
 APP_TITLE = "园区低碳规划与绿电直连优化平台"
