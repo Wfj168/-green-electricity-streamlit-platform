@@ -383,6 +383,8 @@ def solve_linear_dispatch(
         {
             "Period": profiles["Period"].values,
             "Demand": profiles["Demand"].values,
+            "Import price": profiles["Import price"].values,
+            "Export price": profiles["Export price"].values,
             "Solar": x[idx_solar],
             "Wind": x[idx_wind],
             "Gas": x[idx_gas],
@@ -469,10 +471,28 @@ def solve_rolling_dispatch(
     return pd.concat(all_saved_results, ignore_index=True), pd.DataFrame(rolling_logs), "success"
 
 
-def summarize_indicators(result_df: pd.DataFrame) -> pd.DataFrame:
+def summarize_indicators(
+    result_df: pd.DataFrame,
+    gas_cost: float = 60.0,
+    storage_variable_cost: float = 1.0,
+    gas_co2_intensity: float = 0.398,
+    investment_cost_meur: float = 0.0,
+) -> pd.DataFrame:
     total_generation = result_df[["Solar", "Wind", "Gas", "Import", "Storage discharge"]].sum().sum()
     total_renewable = result_df[["Solar", "Wind"]].sum().sum()
+    total_demand = result_df["Demand"].sum()
+    operating_cost = (
+        result_df["Gas"].sum() * gas_cost
+        + (result_df["Import"] * result_df["Import price"]).sum()
+        - 0.2 * (result_df["Export"] * result_df["Export price"]).sum()
+        + (result_df["Storage charge"].sum() + result_df["Storage discharge"].sum()) * storage_variable_cost
+        + result_df["Excess"].sum() * 20.0
+        + result_df["Unmet"].sum() * 100000.0
+    )
+    co2_emissions = result_df["Gas"].sum() * gas_co2_intensity
+    ceep_share = result_df["Excess"].sum() / total_demand * 100 if total_demand > 0 else 0
     metrics = {
+        "Total electricity demand [MWh]": total_demand,
         "Total renewable generation [MWh]": total_renewable,
         "Total gas generation [MWh]": result_df["Gas"].sum(),
         "Total import [MWh]": result_df["Import"].sum(),
@@ -480,6 +500,11 @@ def summarize_indicators(result_df: pd.DataFrame) -> pd.DataFrame:
         "Total excess electricity [MWh]": result_df["Excess"].sum(),
         "Total unmet demand [MWh]": result_df["Unmet"].sum(),
         "Renewable share [%]": total_renewable / total_generation * 100 if total_generation > 0 else 0,
+        "CEEP share [%]": ceep_share,
+        "CO2 emissions [tCO2]": co2_emissions,
+        "Operating cost proxy [EUR]": operating_cost,
+        "Annualized investment cost [M EUR/year]": investment_cost_meur,
+        "Total cost proxy [EUR]": operating_cost + investment_cost_meur * 1_000_000,
     }
     return pd.DataFrame({"Metric": list(metrics.keys()), "Value": list(metrics.values())})
 
@@ -668,6 +693,7 @@ def run_storemore_simulation(
     generator_df: pd.DataFrame,
     storage_df: pd.DataFrame,
     fuel_df: pd.DataFrame,
+    capex_df: pd.DataFrame | None = None,
     uploaded_csv=None,
 ) -> dict[str, object]:
     required_hours = int(inputs.rolling_days) * 24 + 24
@@ -734,7 +760,29 @@ def run_storemore_simulation(
             "Unit": ["MW", "MW", "MWh"],
         }
     )
-    metric_df = summarize_indicators(result_df)
+    solar_capex = get_table_value(generator_df, "solar", "Capital Investment Cost [M EUR/MW]", 0.56)
+    wind_capex = get_table_value(generator_df, "wind", "Capital Investment Cost [M EUR/MW]", 1.1)
+    storage_capex = 0.56
+    if capex_df is not None and {"Technology", "Annual investment cost [M EUR/year]"}.issubset(capex_df.columns):
+        match = capex_df.loc[
+            capex_df["Technology"].astype(str).str.lower().str.contains("li-ion|liion", regex=True),
+            "Annual investment cost [M EUR/year]",
+        ]
+        if not match.empty:
+            storage_capex = float(match.iloc[0])
+    investment_cost_meur = solar_invest * solar_capex + wind_invest * wind_capex + storage_invest * storage_capex
+    investment_df["Annualized cost proxy [M EUR/year]"] = [
+        solar_invest * solar_capex,
+        wind_invest * wind_capex,
+        storage_invest * storage_capex,
+    ]
+    metric_df = summarize_indicators(
+        result_df,
+        gas_cost=gas_cost,
+        storage_variable_cost=storage_variable_cost,
+        gas_co2_intensity=gas_co2_intensity,
+        investment_cost_meur=investment_cost_meur,
+    )
     summary_df = pd.DataFrame(
         {
             "Item": [
@@ -786,6 +834,8 @@ def run_storemore_simulation(
         zip_file.writestr("investment_results.csv", investment_df.to_csv(index=False))
         zip_file.writestr("key_indicators.csv", metric_df.to_csv(index=False))
         zip_file.writestr("rolling_log.csv", rolling_log_df.to_csv(index=False))
+        if capex_df is not None:
+            zip_file.writestr("capex_inputs.csv", capex_df.to_csv(index=False))
         for file_name, image_bytes in figures.items():
             zip_file.writestr(file_name, image_bytes)
     zip_buffer.seek(0)

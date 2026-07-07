@@ -8,7 +8,6 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "results"
-FIGURE_DIR = ROOT / "assets" / "figures"
 
 
 @st.cache_data(show_spinner=False)
@@ -61,8 +60,3 @@ def metric_from_table(metrics: pd.DataFrame, metric_name: str, default: float = 
     except (TypeError, ValueError):
         return default
 
-
-def figure_assets() -> list[Path]:
-    if not FIGURE_DIR.exists():
-        return []
-    return sorted(FIGURE_DIR.glob("*.png"))

@@ -1,20 +1,13 @@
 from __future__ import annotations
 
-import time
-from pathlib import Path
+from dataclasses import asdict
+from typing import Any
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
-from src import charts
-from src.data_loader import (
-    figure_assets,
-    load_carbon_management,
-    load_dispatch,
-    load_summary,
-    metric_from_table,
-)
-from src.model_adapter import run_quick_trial
 from src.storemore_engine import (
     StoreMoreInputs,
     csv_template,
@@ -24,853 +17,748 @@ from src.storemore_engine import (
     default_storage_table,
     run_storemore_simulation,
 )
-try:
-    from src.ui_components import (
-        badge,
-        empty_hint,
-        green_direct_cost_card,
-        inject_global_css,
-        metric_card,
-        page_title,
-        pills,
-        section_label,
-    )
-except ImportError:
-    from src.ui_components import (
-        badge,
-        empty_hint,
-        green_direct_cost_card,
-        inject_global_css,
-        metric_card,
-        page_title,
-        section_label,
-    )
-
-    def pills(items: list[str]) -> None:
-        st.write("、".join(items))
-
-
-APP_TITLE = "园区低碳规划与绿电直连优化平台"
-BRAND = "绿电向导"
+from src.ui_components import (
+    badge,
+    empty_hint,
+    inject_global_css,
+    metric_card,
+    page_title,
+    pills,
+    section_label,
+    status_box,
+)
 
 
 st.set_page_config(
-    page_title=APP_TITLE,
-    page_icon="G",
+    page_title="园区低碳规划与绿电直连优化平台",
+    page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 inject_global_css()
 
 
-def _init_state() -> None:
-    defaults = {
-        "data_ready": False,
-        "data_confirmed": False,
-        "params_valid": False,
-        "quick_trial": None,
-        "quick_trial_message": "",
+PAGES = [
+    "平台概览",
+    "参数配置与运行",
+    "实时结果图",
+    "调度综合指标",
+    "绿电直连规划",
+    "结果导出",
+    "工程架构",
+]
+
+
+def init_state() -> None:
+    defaults: dict[str, Any] = {
+        "simulation_result": None,
+        "simulation_inputs": None,
+        "generator_table": default_generator_table(),
+        "storage_table": default_storage_table(),
+        "fuel_table": default_fuel_table(),
+        "capex_table": default_capex_table(),
     }
     for key, value in defaults.items():
-        st.session_state.setdefault(key, value)
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
-def _safe_number(value: object, default: float = 0.0) -> float:
+def result() -> dict[str, Any] | None:
+    value = st.session_state.get("simulation_result")
+    return value if isinstance(value, dict) and value.get("success") else None
+
+
+def metrics_dict(simulation: dict[str, Any]) -> dict[str, float]:
+    metrics = simulation["metrics"]
+    return dict(zip(metrics["Metric"], metrics["Value"]))
+
+
+def input_dict() -> dict[str, Any]:
+    inputs = st.session_state.get("simulation_inputs")
+    if inputs is None:
+        return {}
+    if hasattr(inputs, "__dataclass_fields__"):
+        return asdict(inputs)
+    return dict(inputs)
+
+
+def fmt(value: float | int | None, digits: int = 2) -> str:
+    if value is None:
+        return "-"
     try:
-        if pd.isna(value):
-            return default
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
-        return default
+        return "-"
+    if abs(number) >= 1000:
+        return f"{number:,.{digits}f}"
+    return f"{number:.{digits}f}"
 
 
-def _scenario_row(summary: pd.DataFrame, scenario: str) -> pd.Series:
-    hit = summary[summary["Scenario"].eq(scenario)]
-    if hit.empty:
-        return pd.Series(dtype="object")
-    return hit.iloc[0]
+def build_inputs(
+    scenario_name: str,
+    total_demand: float,
+    service_life: int,
+    import_price: float,
+    export_price: float,
+    import_export_capacity: float,
+    rps_constraint: bool,
+    min_res_share: float,
+    co2_constraint: bool,
+    max_co2: float,
+    ceep_constraint: bool,
+    max_ceep: float,
+    optimize_capacity: bool,
+    restrict_investments: bool,
+    rolling_days: int,
+    country_code: str,
+) -> StoreMoreInputs:
+    return StoreMoreInputs(
+        scenario_name=scenario_name,
+        total_demand=total_demand,
+        service_life=service_life,
+        import_price=import_price,
+        export_price=export_price,
+        import_export_capacity=import_export_capacity,
+        rps_constraint=rps_constraint,
+        min_res_share=min_res_share,
+        co2_constraint=co2_constraint,
+        max_co2=max_co2,
+        ceep_constraint=ceep_constraint,
+        max_ceep=max_ceep,
+        optimize_capacity=optimize_capacity,
+        restrict_investments=restrict_investments,
+        rolling_days=rolling_days,
+        country_code=country_code,
+    )
 
 
-def _mode_name(index: float) -> str:
-    mapping = {
-        1: "园区内新建绿电",
-        2: "虚拟电厂聚合绿电",
-        3: "绿电基地",
+def run_scenario(
+    inputs: StoreMoreInputs,
+    generator_df: pd.DataFrame,
+    storage_df: pd.DataFrame,
+    fuel_df: pd.DataFrame,
+    capex_df: pd.DataFrame,
+    uploaded_csv=None,
+) -> dict[str, Any]:
+    simulation = run_storemore_simulation(
+        inputs=inputs,
+        generator_df=generator_df,
+        storage_df=storage_df,
+        fuel_df=fuel_df,
+        capex_df=capex_df,
+        uploaded_csv=uploaded_csv,
+    )
+    if simulation.get("success"):
+        st.session_state["simulation_result"] = simulation
+        st.session_state["simulation_inputs"] = inputs
+        st.session_state["generator_table"] = generator_df
+        st.session_state["storage_table"] = storage_df
+        st.session_state["fuel_table"] = fuel_df
+        st.session_state["capex_table"] = capex_df
+    return simulation
+
+
+def run_default_scenario() -> None:
+    inputs = build_inputs(
+        scenario_name="Default realtime scenario",
+        total_demand=1_000_000.0,
+        service_life=25,
+        import_price=90.0,
+        export_price=70.0,
+        import_export_capacity=500.0,
+        rps_constraint=True,
+        min_res_share=35.0,
+        co2_constraint=False,
+        max_co2=100_000.0,
+        ceep_constraint=False,
+        max_ceep=20.0,
+        optimize_capacity=True,
+        restrict_investments=False,
+        rolling_days=3,
+        country_code="CN",
+    )
+    simulation = run_scenario(
+        inputs,
+        default_generator_table(),
+        default_storage_table(),
+        default_fuel_table(),
+        default_capex_table(),
+    )
+    if not simulation.get("success"):
+        st.error(f"默认场景计算失败：{simulation.get('message')}")
+
+
+def require_result(message: str = "请先在“参数配置与运行”页面完成一次实时优化。") -> dict[str, Any] | None:
+    simulation = result()
+    if simulation is None:
+        empty_hint("尚未生成实时结果", message)
+        if st.button("运行默认场景", type="primary"):
+            with st.spinner("正在计算默认场景..."):
+                run_default_scenario()
+            st.rerun()
+        return None
+    return simulation
+
+
+def plot_layout(fig: go.Figure, height: int = 430) -> go.Figure:
+    fig.update_layout(
+        template="plotly_white",
+        height=height,
+        margin=dict(l=20, r=20, t=54, b=36),
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.08, x=0),
+    )
+    return fig
+
+
+def generation_figure(dispatch: pd.DataFrame) -> go.Figure:
+    colors = {
+        "Solar": "#f59e0b",
+        "Wind": "#22c55e",
+        "Gas": "#f97316",
+        "Import": "#2563eb",
+        "Storage discharge": "#8b5cf6",
     }
-    return mapping.get(int(round(index or 1)), "园区内新建绿电")
+    fig = go.Figure()
+    for column in ["Solar", "Wind", "Gas", "Import", "Storage discharge"]:
+        fig.add_trace(
+            go.Scatter(
+                x=dispatch["Period"],
+                y=dispatch[column],
+                mode="lines",
+                stackgroup="supply",
+                name=column,
+                line=dict(width=1.5, color=colors[column]),
+            )
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=dispatch["Period"],
+            y=dispatch["Demand"],
+            mode="lines",
+            name="Demand",
+            line=dict(width=3, color="#111827"),
+        )
+    )
+    fig.update_xaxes(title="滚动小时")
+    fig.update_yaxes(title="功率 / MW")
+    fig.update_layout(title="电力平衡实时计算结果")
+    return plot_layout(fig)
 
 
-def _sidebar() -> str:
+def storage_figure(dispatch: pd.DataFrame) -> go.Figure:
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Bar(
+            x=dispatch["Period"],
+            y=-dispatch["Storage charge"],
+            name="Storage charge",
+            marker_color="#38bdf8",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=dispatch["Period"],
+            y=dispatch["Storage discharge"],
+            name="Storage discharge",
+            marker_color="#a855f7",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=dispatch["Period"],
+            y=dispatch["SOC"],
+            name="SOC",
+            line=dict(color="#16a34a", width=3),
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(title="储能充放电与 SOC")
+    fig.update_xaxes(title="滚动小时")
+    fig.update_yaxes(title_text="充放电功率 / MW", secondary_y=False)
+    fig.update_yaxes(title_text="SOC / MWh", secondary_y=True)
+    return plot_layout(fig)
+
+
+def balance_figure(dispatch: pd.DataFrame) -> go.Figure:
+    total_supply = dispatch[["Solar", "Wind", "Gas", "Import", "Storage discharge"]].sum(axis=1)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=dispatch["Period"], y=dispatch["Demand"], mode="lines", name="Demand", line=dict(color="#111827", width=3)))
+    fig.add_trace(go.Scatter(x=dispatch["Period"], y=total_supply, mode="lines", name="Total supply", line=dict(color="#0ea5e9", width=3)))
+    fig.add_trace(go.Bar(x=dispatch["Period"], y=dispatch["Excess"], name="Excess", marker_color="#f59e0b"))
+    fig.add_trace(go.Bar(x=dispatch["Period"], y=dispatch["Unmet"], name="Unmet", marker_color="#ef4444"))
+    fig.update_layout(title="供需校核、弃电与缺电", barmode="group")
+    fig.update_xaxes(title="滚动小时")
+    fig.update_yaxes(title="MWh / h")
+    return plot_layout(fig)
+
+
+def price_dispatch_figure(dispatch: pd.DataFrame) -> go.Figure:
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Scatter(x=dispatch["Period"], y=dispatch["Import price"], name="Import price", line=dict(color="#2563eb", width=2)), secondary_y=True)
+    fig.add_trace(go.Scatter(x=dispatch["Period"], y=dispatch["Export price"], name="Export price", line=dict(color="#64748b", width=2, dash="dot")), secondary_y=True)
+    fig.add_trace(go.Bar(x=dispatch["Period"], y=dispatch["Import"], name="Import power", marker_color="#93c5fd"), secondary_y=False)
+    fig.add_trace(go.Bar(x=dispatch["Period"], y=-dispatch["Export"], name="Export power", marker_color="#fbbf24"), secondary_y=False)
+    fig.update_layout(title="电价驱动的购售电行为")
+    fig.update_xaxes(title="滚动小时")
+    fig.update_yaxes(title_text="购售电功率 / MW", secondary_y=False)
+    fig.update_yaxes(title_text="价格 / EUR-MWh", secondary_y=True)
+    return plot_layout(fig)
+
+
+def metrics_bar_figure(metrics: dict[str, float]) -> go.Figure:
+    selected = {
+        "Renewable share [%]": "绿电占比",
+        "CEEP share [%]": "弃电率",
+        "CO2 emissions [tCO2]": "碳排放",
+        "Total cost proxy [EUR]": "综合成本",
+    }
+    values = [float(metrics.get(key, 0.0)) for key in selected]
+    fig = go.Figure(
+        go.Bar(
+            x=list(selected.values()),
+            y=values,
+            marker_color=["#16a34a", "#f59e0b", "#ef4444", "#2563eb"],
+            text=[fmt(v) for v in values],
+            textposition="outside",
+        )
+    )
+    fig.update_layout(title="关键指标实时汇总")
+    fig.update_yaxes(title="指标值")
+    return plot_layout(fig, height=380)
+
+
+def rolling_figure(rolling_log: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=rolling_log["Rolling day"],
+            y=rolling_log["Objective value of 48h window"],
+            name="48h window objective",
+            marker_color="#0ea5e9",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=rolling_log["Rolling day"],
+            y=rolling_log["Final SOC after saved horizon [MWh]"],
+            name="Final SOC",
+            yaxis="y2",
+            line=dict(color="#22c55e", width=3),
+        )
+    )
+    fig.update_layout(
+        title="滚动优化窗口状态",
+        yaxis=dict(title="目标函数值"),
+        yaxis2=dict(title="末端 SOC / MWh", overlaying="y", side="right"),
+    )
+    fig.update_xaxes(title="滚动日")
+    return plot_layout(fig, height=380)
+
+
+def green_cost_figure(costs: dict[str, float]) -> go.Figure:
+    colors = ["#16a34a", "#2563eb", "#9333ea"]
+    fig = go.Figure(
+        go.Bar(
+            x=list(costs.keys()),
+            y=list(costs.values()),
+            marker_color=colors,
+            text=[f"{v:.1f}" for v in costs.values()],
+            textposition="outside",
+        )
+    )
+    fig.update_layout(title="绿电直连方案成本对比")
+    fig.update_yaxes(title="规划期成本 / 万元")
+    return plot_layout(fig, height=380)
+
+
+def render_result_cards(simulation: dict[str, Any]) -> None:
+    metrics = metrics_dict(simulation)
+    cols = st.columns(4)
+    with cols[0]:
+        metric_card("模拟期用电量", fmt(metrics.get("Total electricity demand [MWh]", 0)), "MWh", "blue", "E")
+    with cols[1]:
+        metric_card("绿电占比", fmt(metrics.get("Renewable share [%]", 0)), "%", "green", "R")
+    with cols[2]:
+        metric_card("CO2排放量", fmt(metrics.get("CO2 emissions [tCO2]", 0)), "tCO2", "orange", "C")
+    with cols[3]:
+        metric_card("综合成本", fmt(metrics.get("Total cost proxy [EUR]", 0)), "EUR", "purple", "¥")
+
+
+def sidebar() -> str:
     with st.sidebar:
         st.markdown(
-            f"""
+            """
             <div class="brand-card">
               <div class="brand-logo">G</div>
               <div>
-                <div class="brand-name">{BRAND}</div>
-                <div class="brand-subtitle">县域/园区综合能源优化</div>
+                <div class="brand-name">绿电向导</div>
+                <div class="brand-subtitle">实时低碳规划与调度优化</div>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        page = st.radio(
-            "功能导航",
-            [
-                "平台概述",
-                "系统构建与运行机制设置",
-                "StoreMore仿真优化",
-                "调度结果图",
-                "调度综合指标分析",
-                "常见案例对比分析",
-                "绿电直连补充方式",
-                "技术路线与创新点",
-            ],
-            label_visibility="collapsed",
-        )
+        selected = st.radio("功能导航", PAGES, label_visibility="collapsed")
+        st.divider()
+        if result() is None:
+            status_box("当前状态", "尚未完成实时计算，请先配置参数并运行模型。", ok=False)
+        else:
+            inputs = input_dict()
+            status_box(
+                "当前状态",
+                f"已完成场景：{inputs.get('scenario_name', 'current scenario')}",
+                ok=True,
+            )
         st.markdown(
-            '<div class="sidebar-note">模型定位：县域/园区综合能源系统线性规划与调度模型，'
-            "用于方案规划、低碳机制比较、调度结果展示和决策支持；不表述为真实10kV潮流平台。</div>",
+            """
+            <div class="sidebar-note">
+              本平台的图表和指标来自当前参数下的滚动线性优化结果。修改参数后需要重新运行，后续页面会自动读取新的计算结果。
+            </div>
+            """,
             unsafe_allow_html=True,
         )
-    return page
+    return selected
 
 
 def overview_page() -> None:
-    planning = load_summary("planning")
-    operation = load_summary("operation")
-    s8 = _scenario_row(planning, "S8")
-    r4 = _scenario_row(operation, "R4")
-
-    page_title("平台概述", "园区低碳规划与绿电直连优化平台")
+    page_title("园区低碳规划与绿电直连优化平台", "面向园区综合能源系统的参数建模、实时优化、指标分析与绿电直连决策支持。")
+    badge("实时计算平台")
     st.markdown(
         """
         <div class="overview-panel">
-          <div class="overview-title">面向园区级复杂能源系统的规划、运行调度与低碳效益评估工具</div>
+          <div class="overview-title">平台定位</div>
           <div class="overview-text">
-          平台基于 V17.3.9 县域/园区综合能源模型，融合 StoreMore 的能源系统建模思路，
-          将电、热、冷、气、氢、碳等维度统一到可交互的网页中。页面重点展示正式模型结果，
-          同时提供低分辨率快速试算、参数校验、算法说明、案例对比和功能自检，便于汇报和复核。
+            平台以综合能源系统线性规划和滚动调度为核心，将源荷预测、设备容量、储能约束、绿电占比、
+            碳排约束、弃电约束和绿电直连成本测算组织成一个连续的工程流程。用户修改参数后重新运行模型，
+            后续图表、指标和方案对比都会基于本次计算结果刷新。
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    cols = st.columns(4)
-    with cols[0]:
-        metric_card("规划场景", "S0-S8", "9类", "blue", "场景")
-    with cols[1]:
-        metric_card("运行场景", "R0-R4", "5类", "green", "调度")
-    with cols[2]:
-        metric_card(
-            "深度低碳 CO2",
-            f"{_safe_number(s8.get('Annual CO2 emissions [tCO2/year]')):,.0f}",
-            "t/年",
-            "purple",
-            "碳",
-        )
-    with cols[3]:
-        metric_card(
-            "低碳调度成本",
-            f"{_safe_number(r4.get('Private total annual cost [million CNY/year]')):.2f}",
-            "百万元/年",
-            "orange",
-            "成本",
-        )
-
-    section_label("核心功能")
-    f1, f2 = st.columns([0.95, 1.05])
-    with f1:
-        st.markdown(
-            """
-            <div class="feature-grid">
-              <div class="feature-card"><b>多能流耦合调度</b><span>统一展示电、热、冷、气、氢、碳多维运行结果，支持典型日切换。</span></div>
-              <div class="feature-card"><b>StoreMore仿真优化</b><span>支持 RPS、CO2、CEEP、容量规划、48小时滚动调度、CSV上传和结果下载。</span></div>
-              <div class="feature-card"><b>低碳机制配置</b><span>配置碳交易、绿证、绿氢、P2X、碳捕集和绿电直连等低碳机制。</span></div>
-              <div class="feature-card"><b>工程化交付</b><span>正式结果展示与在线仿真并行，页面面向实际使用，不包含汇报话术。</span></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with f2:
-        fig = charts.summary_comparison_bar(
-            planning,
-            scenarios=["S0", "S2", "S4", "S6", "S8"],
-            metric="Annual CO2 emissions [tCO2/year]",
-            title="规划场景年度CO2排放对比",
-            color="#22c55e",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    section_label("论文结果图集")
-    figures = figure_assets()
-    if figures:
-        selected = st.selectbox(
-            "选择图表",
-            options=[item.name for item in figures],
-            format_func=lambda name: name.replace("_", " ").replace(".png", ""),
-        )
-        st.image(str(Path("assets/figures") / selected), use_container_width=True)
+    simulation = result()
+    if simulation is not None:
+        section_label("当前实时结果")
+        render_result_cards(simulation)
     else:
-        empty_hint("缺少图集", "未检测到 assets/figures 下的 PNG 结果图。")
+        empty_hint("尚未运行模型", "进入“参数配置与运行”页面后，可以使用默认参数或上传时序数据完成第一次计算。")
 
-
-def system_page() -> None:
-    page_title("系统构建与运行机制设置", "园区基础设备、StoreMore约束、低碳机制、源荷预测与按钮流程")
-
-    tab1, tab2, tab3, tab4 = st.tabs(["园区组成", "StoreMore约束", "市场-源-荷信息", "求解流程"])
-
-    with tab1:
-        section_label("园区基础设备")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.toggle("启用风机", value=True)
-            st.number_input("风机额定数量", min_value=0, value=4, step=1)
-            st.number_input("风机额定功率 MW", min_value=0.0, value=2.0, step=0.5)
-            st.number_input("切入风速 m/s", min_value=0.0, value=3.0, step=0.5)
-            st.number_input("额定风速 m/s", min_value=0.0, value=12.0, step=0.5)
-        with c2:
-            st.toggle("启用燃气轮机", value=True)
-            st.text_input("供电功率上下限 MW", value="0-350")
-            st.text_input("制热功率上下限 MW", value="0-300")
-            st.number_input("电效率 %", min_value=0.0, max_value=100.0, value=35.0)
-            st.number_input("热效率 %", min_value=0.0, max_value=100.0, value=40.0)
-        with c3:
-            st.toggle("启用储电", value=True)
-            st.number_input("储电容量 MWh", min_value=0.0, value=60.0)
-            st.text_input("荷电范围 MWh", value="10-60")
-            st.number_input("储电效率 %", min_value=0.0, max_value=100.0, value=90.0)
-            st.number_input("1h充放电最大功率 MW", min_value=0.0, value=5.0)
-
-        c4, c5, c6 = st.columns(3)
-        with c4:
-            st.toggle("启用电锅炉", value=True)
-            st.text_input("电锅炉耗电功率上下限 MW", value="0-40")
-        with c5:
-            st.toggle("启用蓄热", value=True)
-            st.number_input("蓄热容量 MWh", min_value=0.0, value=120.0)
-            st.text_input("蓄热范围 MWh", value="20-120")
-            st.number_input("蓄热效率 %", min_value=0.0, max_value=100.0, value=95.0)
-        with c6:
-            st.toggle("启用垃圾焚烧电厂", value=True)
-            st.number_input("日总处理量 MW", min_value=0.0, value=2.0)
-            st.text_input("单时段出力范围 MW", value="0.06-0.1")
-
-        section_label("StoreMore储能技术选择")
-        selected_storage = st.multiselect(
-            "选择需要纳入说明或后续扩展的储能技术",
-            ["Li-ion", "Gravity", "CAES", "LAES", "VRFB", "SMES", "Heat storage", "H2 tank"],
-            default=["Li-ion", "Heat storage", "H2 tank"],
-        )
-        pills(selected_storage)
-        st.caption("当前正式求解结果已包含电储能、热储能和氢能代理；其余 StoreMore 储能技术作为平台扩展参数预留。")
-
-    with tab2:
-        section_label("StoreMore约束与模型参数")
-        scenario_name = st.text_input("场景名称", value="园区低碳协同调度演示")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            enable_rps = st.checkbox("RPS 可再生能源占比约束", value=True)
-            min_res = st.slider("最小可再生能源占比 %", 0, 100, 48)
-        with c2:
-            enable_co2 = st.checkbox("CO2 年度排放约束", value=True)
-            max_co2 = st.number_input("年度CO2上限 t", min_value=0.0, value=25000.0, step=500.0)
-        with c3:
-            enable_ceep = st.checkbox("CEEP 弃电约束", value=True)
-            max_ceep = st.slider("最大弃电率 %", 0, 50, 8)
-
-        c4, c5, c6 = st.columns(3)
-        with c4:
-            st.checkbox("Model heat 启用供热耦合", value=True)
-        with c5:
-            st.checkbox("Optimize generation capacity 优化新增容量", value=True)
-        with c6:
-            st.checkbox("Restrict investments 限制投资边界", value=True)
-
-        st.markdown(
-            f"""
-            <div class="white-panel">
-              <b>当前约束摘要</b><br>
-              场景：{scenario_name}；
-              RPS：{'启用' if enable_rps else '关闭'}，目标 {min_res}%；
-              CO2：{'启用' if enable_co2 else '关闭'}，上限 {max_co2:,.0f} t；
-              CEEP：{'启用' if enable_ceep else '关闭'}，最大弃电率 {max_ceep}%。
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        section_label("StoreMore手册输入表")
-        generator_table = pd.DataFrame(
-            [
-                {"技术": "燃气轮机/CHP", "已装容量MW": 350, "最大新增MW": 80, "效率%": 35, "CO2强度t/MWh": 0.202},
-                {"技术": "光伏", "已装容量MW": 300, "最大新增MW": 120, "效率%": 100, "CO2强度t/MWh": 0.0},
-                {"技术": "风电", "已装容量MW": 500, "最大新增MW": 160, "效率%": 100, "CO2强度t/MWh": 0.0},
-                {"技术": "电解槽", "已装容量MW": 120, "最大新增MW": 50, "效率%": 85, "CO2强度t/MWh": 0.0},
-            ]
-        )
-        st.data_editor(generator_table, hide_index=True, use_container_width=True, disabled=False)
-
-    with tab3:
-        section_label("源荷预测数据")
-        dispatch = load_dispatch("operation", "R4")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.plotly_chart(charts.source_forecast(dispatch), use_container_width=True)
-        with c2:
-            st.plotly_chart(charts.load_forecast(dispatch), use_container_width=True)
-
-        section_label("电价分布上传校验")
-        uploaded = st.file_uploader("上传 StoreMore 格式电价 CSV：第一列 period，第二列为国家或地区代码", type=["csv"])
-        if uploaded is not None:
-            try:
-                price_df = pd.read_csv(uploaded)
-                if price_df.shape[1] >= 2 and price_df.columns[0].lower() == "period":
-                    st.success("电价文件格式校验通过。当前演示不会覆盖正式结果，只作为参数检查。")
-                    st.dataframe(price_df.head(12), use_container_width=True)
-                else:
-                    st.warning("文件已读取，但第一列应为 period，第二列应为价格序列。")
-            except Exception as exc:
-                st.error(f"电价文件读取失败：{exc}")
-
-    with tab4:
-        section_label("按钮流程与快速试算")
-        b1, b2, b3, b4, b5 = st.columns([1, 1, 1, 1, 1])
-        if b1.button("一键导入", use_container_width=True):
-            st.session_state.data_ready = True
-            st.success("预测数据已成功导入。")
-        if b2.button("刷新数据", use_container_width=True):
-            st.session_state.data_ready = True
-            st.info("已刷新为内置正式结果数据。")
-        if b3.button("确认调度数据", use_container_width=True, disabled=not st.session_state.data_ready):
-            st.session_state.data_confirmed = True
-            st.success("调度数据已确认。")
-        if b4.button("参数校验", use_container_width=True, disabled=not st.session_state.data_confirmed):
-            st.session_state.params_valid = True
-            st.success("参数校验通过。")
-        if b5.button("开始优化调度", use_container_width=True, disabled=not st.session_state.params_valid):
-            with st.spinner("正在执行低分辨率快速试算；若云端资源不足，将自动回退到正式结果。"):
-                started = time.time()
-                result = run_quick_trial("S4", {"milp_time_limit": 20.0, "mip_rel_gap": 0.02})
-                result["elapsed"] = time.time() - started
-                st.session_state.quick_trial = result
-                st.session_state.quick_trial_message = result.get("message", "")
-            if result.get("success"):
-                st.success(f"快速试算完成，用时 {result['elapsed']:.1f} 秒。")
-            else:
-                st.warning("快速试算未完成，页面已回退展示正式结果。")
-
-        quick = st.session_state.quick_trial
-        if quick:
-            if quick.get("success"):
-                metrics = quick["result"]["metrics"]
-                total_cost = metric_from_table(metrics, "Private total annual cost")
-                co2 = metric_from_table(metrics, "Annual CO2 emissions")
-                c1, c2 = st.columns(2)
-                with c1:
-                    metric_card("快速试算总成本", f"{total_cost * 7.8 / 1e6:.2f}", "百万元/年", "blue", "试算")
-                with c2:
-                    metric_card("快速试算CO2", f"{co2:,.0f}", "t/年", "green", "碳")
-            else:
-                st.caption(st.session_state.quick_trial_message)
-
-        st.markdown(
-            """
-            <div class="white-panel">
-              <b>求解流程说明</b><br>
-              StoreMore手册中包含“全年完美预见规划”和“48小时滚动调度”两阶段思想。
-              本平台为保证 Streamlit Cloud 稳定性，展示正式全年结果为主；按钮触发的是低分辨率快速试算，
-              若资源不足会明确提示并回退到正式结果，不让页面空白或报错。
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-def dispatch_page() -> None:
-    page_title("调度结果图", "多能流耦合园区运行结果与能流分析")
-    scenario = st.selectbox("运行场景", ["R0", "R1", "R2", "R3", "R4"], index=4)
-    dispatch = load_dispatch("operation", scenario)
-    day_options = dispatch["day_name"].dropna().unique().tolist()
-    selected_day = st.selectbox("典型日", day_options, index=0)
-    carrier = st.radio("能流类型", ["电", "热", "气", "氢", "碳"], horizontal=True)
-
-    st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, carrier), use_container_width=True)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.plotly_chart(charts.storage_profile(dispatch, selected_day), use_container_width=True)
-    with c2:
-        st.plotly_chart(charts.dispatch_chart(dispatch, selected_day, "碳"), use_container_width=True)
-
-    section_label("论文结果图快速查看")
-    figures = figure_assets()
-    if figures:
-        cols = st.columns(3)
-        for index, figure in enumerate(figures[:6]):
-            with cols[index % 3]:
-                st.image(str(figure), caption=figure.name[:2] + " 结果图", use_container_width=True)
-    else:
-        empty_hint("缺少图集", "未检测到论文结果图。")
-
-
-def metrics_page() -> None:
-    page_title("调度综合指标分析", "经济效益、环境效益和调度能量指标")
-    operation = load_summary("operation")
-    r4 = _scenario_row(operation, "R4")
-
-    section_label("调度能量指标")
+    section_label("业务流程")
     cols = st.columns(4)
     cards = [
-        ("今日总发电量", _safe_number(r4.get("Annual renewable local absorption [MWh/year]")) / 365, "MWh", "blue", "电"),
-        ("绿电占比", _safe_number(r4.get("Renewable local absorption rate [%]")), "%", "green", "绿"),
-        ("新能源弃用率", _safe_number(r4.get("Renewable curtailment rate [%]")), "%", "purple", "弃"),
-        ("新能源制氢率", _safe_number(r4.get("Industrial-park heat substituted by H2 [%]")), "%", "indigo", "氢"),
+        ("1 参数建模", "配置电源、储能、燃料价格、约束和源荷时序，形成优化问题输入。"),
+        ("2 滚动优化", "以48小时窗口滚动求解，每次保存前24小时调度结果，维持储能SOC连续。"),
+        ("3 结果分析", "生成电力平衡、储能SOC、购售电行为、成本、碳排和约束执行检查。"),
+        ("4 决策输出", "基于计算结果测算绿电直连缺口和规划成本，并导出完整结果包。"),
     ]
-    for col, item in zip(cols, cards):
+    for col, (title, body) in zip(cols, cards):
         with col:
-            metric_card(item[0], f"{item[1]:.2f}", item[2], item[3], item[4])
+            st.markdown(f'<div class="feature-card"><b>{title}</b><span>{body}</span></div>', unsafe_allow_html=True)
 
-    cols = st.columns(4)
-    more_cards = [
-        ("绿电证书获得量", _safe_number(r4.get("Annual renewable local absorption [MWh/year]")) / 100, "本", "teal", "证"),
-        ("绿电证书持有量", _safe_number(r4.get("Annual renewable export [MWh/year]")) / 20, "本", "cyan", "持"),
-        ("绿氢证书获得量", _safe_number(r4.get("Green hydrogen production potential [tH2/year]")), "本", "orange", "氢证"),
-        ("绿氢证书持有量", _safe_number(r4.get("Endogenous green hydrogen production [tH2/year]")), "本", "amber", "持"),
-    ]
-    for col, item in zip(cols, more_cards):
-        with col:
-            metric_card(item[0], f"{item[1]:.2f}", item[2], item[3], item[4])
+    section_label("核心模型能力")
+    pills(["线性规划", "滚动时域调度", "RPS约束", "CO2约束", "CEEP约束", "储能SOC递推", "绿电直连成本测算"])
 
-    section_label("经济效益指标")
-    econ_metrics = [
-        "Private total annual cost [million CNY/year]",
-        "Carbon external cost [million CNY/year]",
-        "Park-internal green-direct cost [million CNY/year]",
-        "VPP aggregated green-direct cost [million CNY/year]",
-        "Remote green-base direct cost [million CNY/year]",
-    ]
-    st.plotly_chart(charts.metric_strip(operation, "R4", econ_metrics), use_container_width=True)
 
-    total_cost = _safe_number(r4.get("Private total annual cost [million CNY/year]"))
-    st.markdown(
-        f"""
-        <div class="wide-gradient">
-          <span>当日折算总成本</span>
-          <b>{total_cost / 365:.2f}</b>
-          <span>万元/日</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
+def parameter_run_page() -> None:
+    page_title("参数配置与运行", "先建立园区系统边界，再运行实时优化，后续页面全部读取本次计算结果。")
+
+    with st.container():
+        section_label("基础场景")
+        c1, c2, c3, c4 = st.columns(4)
+        scenario_name = c1.text_input("场景名称", value="Park realtime case")
+        total_demand = c2.number_input("年用电需求 / MWh", min_value=10_000.0, max_value=10_000_000.0, value=1_000_000.0, step=50_000.0)
+        service_life = c3.number_input("规划周期 / 年", min_value=1, max_value=50, value=25, step=1)
+        rolling_days = c4.slider("滚动优化天数", min_value=1, max_value=14, value=3)
+
+        c5, c6, c7, c8 = st.columns(4)
+        import_price = c5.number_input("购电均价 / EUR-MWh", min_value=1.0, max_value=500.0, value=90.0, step=5.0)
+        export_price = c6.number_input("售电均价 / EUR-MWh", min_value=0.0, max_value=500.0, value=70.0, step=5.0)
+        import_export_capacity = c7.number_input("购售电容量上限 / MW", min_value=1.0, max_value=5000.0, value=500.0, step=20.0)
+        country_code = c8.text_input("电价分布国家代码", value="CN")
+
+    section_label("约束与运行策略")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        rps_constraint = st.checkbox("启用绿电占比约束", value=True)
+        min_res_share = st.slider("最低绿电占比 / %", 0.0, 95.0, 35.0, 1.0)
+    with c2:
+        co2_constraint = st.checkbox("启用CO2排放约束", value=False)
+        max_co2 = st.number_input("年度CO2排放上限 / tCO2", min_value=1000.0, max_value=5_000_000.0, value=100_000.0, step=10_000.0)
+    with c3:
+        ceep_constraint = st.checkbox("启用弃电率约束", value=False)
+        max_ceep = st.slider("最大弃电率 / %", 0.0, 80.0, 20.0, 1.0)
+
+    c4, c5 = st.columns(2)
+    optimize_capacity = c4.checkbox("允许自动规划光伏、风电和储能增量", value=True)
+    restrict_investments = c5.checkbox("限制新增投资规模", value=False)
+
+    section_label("设备与价格参数")
+    tab1, tab2, tab3, tab4 = st.tabs(["电源参数", "储能参数", "燃料价格", "投资成本"])
+    with tab1:
+        generator_df = st.data_editor(st.session_state["generator_table"], use_container_width=True, num_rows="fixed", key="editor_generator")
+    with tab2:
+        storage_df = st.data_editor(st.session_state["storage_table"], use_container_width=True, num_rows="fixed", key="editor_storage")
+    with tab3:
+        fuel_df = st.data_editor(st.session_state["fuel_table"], use_container_width=True, num_rows="fixed", key="editor_fuel")
+    with tab4:
+        capex_df = st.data_editor(st.session_state["capex_table"], use_container_width=True, num_rows="fixed", key="editor_capex")
+
+    section_label("源荷时序数据")
+    st.caption("可上传完整时序CSV，也可以不上传，由平台根据总需求、典型日内曲线和随机扰动生成计算用数据。")
+    template = csv_template(total_demand=total_demand, import_price=import_price, export_price=export_price)
+    st.download_button(
+        "下载8760小时CSV模板",
+        data=template.to_csv(index=False).encode("utf-8-sig"),
+        file_name="profile_template.csv",
+        mime="text/csv",
     )
+    uploaded_csv = st.file_uploader("上传源荷或电价CSV", type=["csv"])
 
-    section_label("环境效益指标")
-    env_cols = st.columns(3)
-    with env_cols[0]:
-        metric_card("总CO2排放量", f"{_safe_number(r4.get('Annual CO2 emissions [tCO2/year]')):,.2f}", "tCO2/年", "red", "排")
-    with env_cols[1]:
-        metric_card("P2X减排潜力", f"{_safe_number(r4.get('Endogenous P2X avoided emissions [tCO2/year]')):,.2f}", "tCO2/年", "blue", "减")
-    with env_cols[2]:
-        metric_card("绿电直连减排代理", f"{_safe_number(r4.get('Green-direct avoided emissions proxy [tCO2/year]')):,.2f}", "tCO2/年", "green", "绿")
+    section_label("开始优化")
+    inputs = build_inputs(
+        scenario_name=scenario_name,
+        total_demand=total_demand,
+        service_life=int(service_life),
+        import_price=import_price,
+        export_price=export_price,
+        import_export_capacity=import_export_capacity,
+        rps_constraint=rps_constraint,
+        min_res_share=min_res_share,
+        co2_constraint=co2_constraint,
+        max_co2=max_co2,
+        ceep_constraint=ceep_constraint,
+        max_ceep=max_ceep,
+        optimize_capacity=optimize_capacity,
+        restrict_investments=restrict_investments,
+        rolling_days=int(rolling_days),
+        country_code=country_code.strip() or "CN",
+    )
+    if st.button("开始实时优化调度", type="primary", use_container_width=True):
+        with st.spinner("正在构建线性规划模型并滚动求解..."):
+            simulation = run_scenario(inputs, generator_df, storage_df, fuel_df, capex_df, uploaded_csv)
+        if simulation.get("success"):
+            st.success("模型计算完成，结果已同步到后续页面。")
+            render_result_cards(simulation)
+        else:
+            st.error(f"模型计算失败：{simulation.get('message')}")
+            st.info("可以适当放宽绿电占比、CO2上限或弃电率约束，也可以提高购售电容量上限后重新运行。")
 
-    carbon = load_carbon_management("decomposition")
-    st.plotly_chart(charts.carbon_decomposition(carbon), use_container_width=True)
 
+def realtime_results_page() -> None:
+    page_title("实时结果图", "所有图表均由当前场景实时计算得到，并随参数变化同步刷新。")
+    simulation = require_result()
+    if simulation is None:
+        return
+    dispatch = simulation["dispatch"]
+    render_result_cards(simulation)
 
-def case_page() -> None:
-    page_title("常见案例对比", "对比不同案例下的调度结果指标")
-    planning = load_summary("planning")
-    cases = ["S0", "S1", "S2", "S3", "S4", "S6", "S8"]
-    labels = [f"案例{i}" for i in range(1, 8)]
-    metric_map = {
-        "当日总成本（万元）": ("Private total annual cost [million CNY/year]", 100 / 365),
-        "运行成本（万元）": ("Variable operating annual cost [million CNY/year]", 100 / 365),
-        "总CO2排放量（吨）": ("Annual CO2 emissions [tCO2/year]", 1),
-        "今日绿电吸纳量（MWh）": ("Annual renewable local absorption [MWh/year]", 1 / 365),
-        "绿电占比（%）": ("Renewable local absorption rate [%]", 1),
-        "弃风弃光率（%）": ("Renewable curtailment rate [%]", 1),
-        "绿电直连成本（百万元）": ("Best green-direct annual cost [million CNY/year]", 1),
-    }
-    table = pd.DataFrame({"对比指标": list(metric_map.keys())})
-    for label, scenario in zip(labels, cases):
-        row = _scenario_row(planning, scenario)
-        values = []
-        for source, scale in metric_map.values():
-            values.append(_safe_number(row.get(source)) * scale)
-        table[label] = [f"{value:.2f}" if value else "-" for value in values]
-
-    st.dataframe(table, hide_index=True, use_container_width=True, height=340)
-
-    descriptions = {
-        "案例1": "低碳机制全部启用，配置垃圾焚烧电厂，降碳技术全部启用。",
-        "案例2": "启用阶梯碳交易与绿证机制，配置垃圾焚烧电厂。",
-        "案例3": "启用阶梯碳交易与绿氢机制，配置垃圾焚烧电厂。",
-        "案例4": "关闭低碳机制，保留垃圾焚烧电厂和降碳技术。",
-        "案例5": "关闭低碳机制，不配置垃圾焚烧电厂。",
-        "案例6": "关闭低碳机制，启用电转气和碳捕集设备。",
-        "案例7": "深度脱碳：P2X、绿电直连与工业园区热替代协同。",
-    }
-    for key, text in descriptions.items():
-        st.markdown(f"**{key}：** {text}")
-
-    if st.button("案例对比", type="primary"):
-        st.success("案例对比已完成，表格已根据正式模型结果刷新。")
+    section_label("电力调度")
+    st.plotly_chart(generation_figure(dispatch), use_container_width=True)
 
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(
-            charts.summary_comparison_bar(
-                planning,
-                scenarios=cases,
-                metric="Annual CO2 emissions [tCO2/year]",
-                title="七类案例CO2排放对比",
-                color="#a855f7",
-            ),
-            use_container_width=True,
-        )
+        st.plotly_chart(storage_figure(dispatch), use_container_width=True)
     with c2:
-        st.plotly_chart(charts.scenario_scatter(planning[planning["Scenario"].isin(cases)]), use_container_width=True)
+        st.plotly_chart(balance_figure(dispatch), use_container_width=True)
+
+    section_label("购售电响应")
+    st.plotly_chart(price_dispatch_figure(dispatch), use_container_width=True)
+
+    with st.expander("查看本次调度明细"):
+        st.dataframe(dispatch, use_container_width=True)
+
+
+def indicator_page() -> None:
+    page_title("调度综合指标", "基于实时调度结果计算经济、低碳、可靠性与约束执行情况。")
+    simulation = require_result()
+    if simulation is None:
+        return
+    metrics = metrics_dict(simulation)
+    inputs = input_dict()
+    render_result_cards(simulation)
+
+    section_label("关键指标图")
+    c1, c2 = st.columns([1.2, 1])
+    with c1:
+        st.plotly_chart(metrics_bar_figure(metrics), use_container_width=True)
+    with c2:
+        st.dataframe(simulation["metrics"], use_container_width=True, hide_index=True)
+
+    section_label("约束执行检查")
+    rolling_days = float(inputs.get("rolling_days", 1) or 1)
+    horizon_ratio = rolling_days * 24 / 8760
+    checks = []
+    if inputs.get("rps_constraint"):
+        checks.append(
+            {
+                "约束": "绿电占比",
+                "目标": f">= {inputs.get('min_res_share', 0):.1f}%",
+                "结果": f"{metrics.get('Renewable share [%]', 0):.1f}%",
+                "状态": "满足" if metrics.get("Renewable share [%]", 0) + 1e-6 >= float(inputs.get("min_res_share", 0)) else "不满足",
+            }
+        )
+    if inputs.get("co2_constraint"):
+        limit = float(inputs.get("max_co2", 0)) * horizon_ratio
+        checks.append(
+            {
+                "约束": "CO2排放",
+                "目标": f"<= {limit:.1f} tCO2",
+                "结果": f"{metrics.get('CO2 emissions [tCO2]', 0):.1f} tCO2",
+                "状态": "满足" if metrics.get("CO2 emissions [tCO2]", 0) <= limit + 1e-6 else "不满足",
+            }
+        )
+    if inputs.get("ceep_constraint"):
+        checks.append(
+            {
+                "约束": "弃电率",
+                "目标": f"<= {inputs.get('max_ceep', 0):.1f}%",
+                "结果": f"{metrics.get('CEEP share [%]', 0):.1f}%",
+                "状态": "满足" if metrics.get("CEEP share [%]", 0) <= float(inputs.get("max_ceep", 0)) + 1e-6 else "不满足",
+            }
+        )
+    if not checks:
+        empty_hint("未启用额外约束", "当前场景只执行功率平衡、设备容量、储能SOC和购售电容量等基础约束。")
+    else:
+        st.dataframe(pd.DataFrame(checks), use_container_width=True, hide_index=True)
+
+    section_label("滚动优化状态")
+    st.plotly_chart(rolling_figure(simulation["rolling_log"]), use_container_width=True)
+    st.dataframe(simulation["rolling_log"], use_container_width=True, hide_index=True)
+
+    section_label("容量规划结果")
+    st.dataframe(simulation["investment"], use_container_width=True, hide_index=True)
 
 
 def green_direct_page() -> None:
-    page_title("绿电直连补充方式", "绿电补充方式规划，支持多种方案直观对比")
-    planning = load_summary("planning")
-    s8 = _scenario_row(planning, "S8")
+    page_title("绿电直连规划", "根据当前实时调度结果计算绿电缺口，并比较三类补充方式的规划成本。")
+    simulation = require_result()
+    if simulation is None:
+        return
+    metrics = metrics_dict(simulation)
+    inputs = input_dict()
+    rolling_days = max(float(inputs.get("rolling_days", 1) or 1), 1.0)
+    annual_scale = 365.0 / rolling_days
+    annual_demand = float(metrics.get("Total electricity demand [MWh]", 0.0)) * annual_scale
+    annual_green = float(metrics.get("Total renewable generation [MWh]", 0.0)) * annual_scale
 
-    mode = st.radio(
-        "选择绿电直连方式",
-        ["园区内新建绿电", "虚拟电厂聚合绿电", "绿电基地"],
-        horizontal=True,
-    )
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown('<div class="mode-card mode-green"><b>园区内新建绿电</b><span>就地生产，就地消纳，线损低。</span></div>', unsafe_allow_html=True)
-    with c2:
-        st.markdown('<div class="mode-card mode-blue"><b>虚拟电厂聚合绿电</b><span>聚合分散绿电资源统一调度。</span></div>', unsafe_allow_html=True)
-    with c3:
-        st.markdown('<div class="mode-card mode-purple"><b>绿电基地</b><span>远距离、大容量、专线输送。</span></div>', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    target_share = c1.slider("目标绿电占比 / %", 10.0, 100.0, max(60.0, float(metrics.get("Renewable share [%]", 0.0))), 1.0)
+    planning_years = c2.number_input("规划周期 / 年", min_value=1, max_value=50, value=int(inputs.get("service_life", 25) or 25), step=1)
+    green_lcoe = c3.number_input("园区内绿电成本 / 元-MWh", min_value=1.0, max_value=1500.0, value=360.0, step=10.0)
+    vpp_lcoe = c4.number_input("虚拟电厂绿电成本 / 元-MWh", min_value=1.0, max_value=1500.0, value=430.0, step=10.0)
 
-    section_label("选择详情")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
-        wind_cap = st.number_input("基地风电容量 MW", min_value=0.0, value=500.0)
-    with c2:
-        pv_cap = st.number_input("基地光伏容量 MW", min_value=0.0, value=300.0)
-    with c3:
-        line_cap = st.number_input("专线最大输送容量 MW", min_value=0.0, value=400.0)
-    with c4:
-        loss_rate = st.number_input("线损率 %", min_value=0.0, max_value=20.0, value=3.5)
-    with c5:
-        price = st.number_input("购电价 元/kWh", min_value=0.0, value=0.32)
+    c5, c6, c7 = st.columns(3)
+    base_lcoe = c5.number_input("绿电基地成本 / 元-MWh", min_value=1.0, max_value=1500.0, value=390.0, step=10.0)
+    line_loss = c6.slider("专线损耗率 / %", 0.0, 20.0, 3.5, 0.1)
+    fixed_cost = c7.number_input("直连固定工程费 / 万元", min_value=0.0, max_value=200_000.0, value=1500.0, step=100.0)
 
-    years = st.number_input("规划周期 年", min_value=1, max_value=40, value=25)
-    target = _safe_number(s8.get("Green-direct target electricity [MWh/year]"), 0.0)
-    if target <= 0:
-        target = _safe_number(s8.get("Annual industrial-park electric load [MWh/year]"), 0.0) * 0.9
-
-    park_cost = target * 320 * years / 1e4 + 600
-    vpp_cost = target * 395 * years / 1e4 + 900
-    base_cost = target * price * 1000 * years / 1e4 / max(1 - loss_rate / 100, 0.01) + 1800
+    target_green = annual_demand * target_share / 100
+    green_gap = max(0.0, target_green - annual_green)
+    effective_base_energy = green_gap / max(1 - line_loss / 100, 0.01)
     costs = {
-        "园区内绿电": park_cost,
-        "虚拟电厂聚合绿电": vpp_cost,
-        "绿电基地": base_cost,
+        "园区内新增绿电": green_gap * green_lcoe * planning_years / 10_000 + fixed_cost * 0.4,
+        "虚拟电厂聚合绿电": green_gap * vpp_lcoe * planning_years / 10_000 + fixed_cost * 0.15,
+        "绿电基地直连": effective_base_energy * base_lcoe * planning_years / 10_000 + fixed_cost,
     }
-    best = min(costs, key=costs.get)
+    best_name = min(costs, key=costs.get)
 
-    if st.button("计算成本", type="primary"):
-        st.success(f"已按 {years} 年周期计算，当前最优绿电直连方式为：{best}。")
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        green_direct_cost_card("园区内绿电", park_cost, "green", selected=mode == "园区内新建绿电")
-    with c2:
-        green_direct_cost_card("虚拟电厂聚合绿电", vpp_cost, "blue", selected=mode == "虚拟电厂聚合绿电")
-    with c3:
-        green_direct_cost_card("绿电基地", base_cost, "purple", selected=mode == "绿电基地")
-
-    st.markdown(f'<div class="best-strip">最优绿电直连方式是：<b>{best}</b></div>', unsafe_allow_html=True)
-    st.caption(
-        f"当前参数：风电 {wind_cap:.0f} MW，光伏 {pv_cap:.0f} MW，专线 {line_cap:.0f} MW，"
-        f"线损 {loss_rate:.1f}%，电价 {price:.2f} 元/kWh。正式模型推荐："
-        f"{_mode_name(_safe_number(s8.get('Best green-direct mode index'), 1))}。"
-    )
-
-
-def storemore_simulation_page() -> None:
-    page_title("StoreMore仿真优化", "容量规划、48小时滚动调度、CSV上传、结果可视化与结果下载")
-
-    left, right = st.columns([0.92, 1.35])
-    with left:
-        section_label("场景与约束")
-        scenario_name = st.text_input("Scenario name", value="green_park_dispatch")
-        total_demand = st.number_input("Total electricity demand [MWh/year]", min_value=1.0, value=1_000_000.0, step=10_000.0)
-        service_life = st.number_input("Service life [years]", min_value=1, max_value=60, value=25)
-        import_price = st.number_input("Import price [EUR/MWh]", min_value=0.0, value=90.0)
-        export_price = st.number_input("Export price [EUR/MWh]", min_value=0.0, value=70.0)
-        import_export_capacity = st.number_input("Import/export capacity [MW]", min_value=0.0, value=500.0)
-
-        rps_constraint = st.checkbox("RPS constraint", value=True)
-        co2_constraint = st.checkbox("CO2 constraint", value=True)
-        ceep_constraint = st.checkbox("CEEP constraint", value=True)
-        optimize_capacity = st.checkbox("Optimize generation capacity", value=True)
-        restrict_investments = st.checkbox("Restrict investments", value=True)
-
-        min_res_share = st.number_input("Minimum RES share [%]", min_value=0.0, max_value=100.0, value=65.0)
-        max_co2 = st.number_input("Maximum CO2 emissions [tCO2/year]", min_value=0.0, value=1_000_000.0, step=10_000.0)
-        max_ceep = st.number_input("Maximum CEEP [%]", min_value=0.0, max_value=100.0, value=15.0)
-        rolling_days = st.number_input("Rolling days for myopic phase", min_value=1, max_value=30, value=7)
-
-        section_label("CSV输入")
-        uploaded_csv = st.file_uploader("Upload custom electricity price CSV or full profile CSV", type=["csv"])
-        country_code = st.selectbox("Country code", ["HR", "DE", "FR", "AT", "BE", "BG", "CZ", "DK", "ES", "SE"])
-        template = csv_template(total_demand, import_price, export_price)
-        st.download_button(
-            "Download input CSV template",
-            data=template.to_csv(index=False),
-            file_name="storemore_input_template.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-    with right:
-        section_label("发电技术参数")
-        generator_df = st.data_editor(
-            default_generator_table(),
-            num_rows="fixed",
-            use_container_width=True,
-            key="storemore_generator_editor",
-        )
-
-        section_label("储能技术参数")
-        storage_selected = st.multiselect(
-            "Enabled storage technologies",
-            default_storage_table()["Unit Name"].tolist(),
-            default=["Liion storage"],
-        )
-        pills(storage_selected)
-        storage_df = st.data_editor(
-            default_storage_table(),
-            num_rows="fixed",
-            use_container_width=True,
-            key="storemore_storage_editor",
-        )
-
-        c1, c2 = st.columns(2)
-        with c1:
-            section_label("年化投资成本")
-            capex_df = st.data_editor(
-                default_capex_table(),
-                num_rows="fixed",
-                use_container_width=True,
-                key="storemore_capex_editor",
-            )
-        with c2:
-            section_label("燃料成本")
-            fuel_df = st.data_editor(
-                default_fuel_table(),
-                num_rows="fixed",
-                use_container_width=True,
-                key="storemore_fuel_editor",
-            )
-
-    st.divider()
-    col_start, col_reset = st.columns([1, 1])
-    start = col_start.button("Start simulation", type="primary", use_container_width=True)
-    if col_reset.button("Clear results", use_container_width=True):
-        st.session_state.pop("storemore_result", None)
-        st.info("Results cleared.")
-
-    if start:
-        inputs = StoreMoreInputs(
-            scenario_name=scenario_name,
-            total_demand=total_demand,
-            service_life=int(service_life),
-            import_price=import_price,
-            export_price=export_price,
-            import_export_capacity=import_export_capacity,
-            rps_constraint=rps_constraint,
-            min_res_share=min_res_share,
-            co2_constraint=co2_constraint,
-            max_co2=max_co2,
-            ceep_constraint=ceep_constraint,
-            max_ceep=max_ceep,
-            optimize_capacity=optimize_capacity,
-            restrict_investments=restrict_investments,
-            rolling_days=int(rolling_days),
-            country_code=country_code,
-        )
-        status_text = st.empty()
-        progress = st.progress(0)
-        with st.spinner("Running StoreMore optimization..."):
-            status_text.info("Solving first phase - capacity planning")
-            progress.progress(30)
-            time.sleep(0.05)
-            status_text.info("MODEL RUNNING - 48h rolling dispatch")
-            progress.progress(55)
-            result = run_storemore_simulation(inputs, generator_df, storage_df, fuel_df, uploaded_csv)
-            progress.progress(100)
-        st.session_state["storemore_result"] = result
-        if result.get("success"):
-            status_text.success("MODEL SOLVED")
-        else:
-            status_text.error("MODEL FAILED")
-
-    result = st.session_state.get("storemore_result")
-    if result:
-        if not result.get("success"):
-            st.error(result.get("message", "Optimization failed."))
-            st.warning("Try reducing Minimum RES share, increasing capacity limits, or disabling strict constraints.")
-            return
-
-        st.success("48h rolling optimization solved successfully.")
-        summary_df = result["summary"]
-        investment_df = result["investment"]
-        rolling_log_df = result["rolling_log"]
-        dispatch_df = result["dispatch"]
-        metric_df = result["metrics"]
-        figures = result["figures"]
-
-        section_label("输入摘要")
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
-
-        section_label("结果指标")
-        cols = st.columns(4)
-        metric_lookup = {row["Metric"]: row["Value"] for _, row in metric_df.iterrows()}
-        metric_cards = [
-            ("Renewable generation", metric_lookup.get("Total renewable generation [MWh]", 0.0), "MWh", "green"),
-            ("Gas generation", metric_lookup.get("Total gas generation [MWh]", 0.0), "MWh", "orange"),
-            ("Unmet demand", metric_lookup.get("Total unmet demand [MWh]", 0.0), "MWh", "red"),
-            ("Renewable share", metric_lookup.get("Renewable share [%]", 0.0), "%", "blue"),
-        ]
-        for col, (label, value, unit, color) in zip(cols, metric_cards):
-            with col:
-                metric_card(label, f"{value:,.2f}", unit, color, label[:2])
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("### Investment Results")
-            st.dataframe(investment_df, use_container_width=True, hide_index=True)
-            st.markdown("### Rolling Optimization Log")
-            st.dataframe(rolling_log_df, use_container_width=True, hide_index=True)
-        with c2:
-            st.markdown("### Key Indicators")
-            st.dataframe(metric_df, use_container_width=True, hide_index=True)
-            st.markdown("### Dispatch Results Preview")
-            st.dataframe(dispatch_df.head(24), use_container_width=True, hide_index=True)
-
-        section_label("结果图")
-        fig_cols = st.columns(2)
-        caption_map = {
-            "power_generation": "Power generation",
-            "storage_input_output": "Input/output to storage",
-            "generation_investment": "Investments into generation capacities",
-            "storage_investment": "Investments into storage capacities",
-            "storage_soc": "Storage SOC",
-            "demand_supply_balance": "Demand and supply balance",
-            "excess_unmet": "Excess electricity and unmet demand",
-        }
-        for idx, (file_name, image_bytes) in enumerate(figures.items()):
-            base_name = file_name.rsplit(".", 1)[0]
-            with fig_cols[idx % 2]:
-                st.image(image_bytes, caption=caption_map.get(base_name, base_name), use_container_width=True)
-
-        st.download_button(
-            "Download Results",
-            data=result["zip"],
-            file_name=f"{scenario_name}_results.zip",
-            mime="application/zip",
-            type="primary",
-            use_container_width=True,
-        )
-
-
-def innovation_page() -> None:
-    page_title("技术路线与创新点", "作品技术路线、程序设计思路和核心特色")
-    section_label("作品技术路线")
-    c1, c2, c3 = st.columns([1, 0.9, 1])
-    with c1:
-        st.markdown(
-            """
-            <div class="route-card">
-              <b>前端UI展示层</b>
-              <span>Streamlit 构建可视化交互界面，承担参数配置、场景切换、流程按钮和结果呈现。</span>
-            </div>
-            <div class="route-card">
-              <b>中间数据层</b>
-              <span>CSV正式结果、调度明细、碳管理结果和论文图集统一读取，服务图表和指标卡。</span>
-            </div>
-            <div class="route-card">
-              <b>后端算法层</b>
-              <span>Python + SciPy 线性规划/混合整数优化模型，支持快速试算与正式结果复现。</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with c2:
-        st.markdown('<div class="flow-arrow">输入<br>模型<br>输出</div>', unsafe_allow_html=True)
-    with c3:
-        st.markdown(
-            """
-            <div class="diagram-card">
-              <div class="diagram-row"><span>园区设备参数</span><b>参数传递</b><span>数据存储</span><b>数据传输</b><span>后端算法层</span></div>
-              <div class="diagram-row"><span>源荷预测数据</span><b>结果呈现</b><span>优化调度数据</span><b>信息返回</b><span>Python / SciPy</span></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    section_label("程序设计思路")
+    section_label("当前绿电缺口")
     cols = st.columns(4)
-    ideas = [
-        ("输入层", "采集园区设备参数、负荷预测、绿电价格、碳排放因子等基础数据。"),
-        ("核心模型层", "构建低碳规划和运行调度模型，处理多目标优化与约束条件。"),
-        ("绿电补充层", "集成绿电直连能力，比较不同接入方案的成本效益。"),
-        ("输出层", "生成调度结果图、经济指标、环境指标、案例对比与算法说明。"),
-    ]
-    for col, (title, text) in zip(cols, ideas):
-        with col:
-            st.markdown(f'<div class="idea-card"><b>{title}</b><span>{text}</span></div>', unsafe_allow_html=True)
+    with cols[0]:
+        metric_card("折算年用电量", fmt(annual_demand), "MWh", "blue", "E")
+    with cols[1]:
+        metric_card("当前年绿电量", fmt(annual_green), "MWh", "green", "R")
+    with cols[2]:
+        metric_card("目标绿电量", fmt(target_green), "MWh", "purple", "T")
+    with cols[3]:
+        metric_card("需补充绿电", fmt(green_gap), "MWh", "orange", "G")
 
-    section_label("作品创新点")
-    cols = st.columns(3)
-    innovations = [
-        ("01", "多维多能流联合优化调度模型", "突破单一电力调度展示，呈现电、热、气、氢、碳全维度协同优化。"),
-        ("02", "多低碳机制与技术联合模拟", "支持RPS、CO2、CEEP、碳交易、绿证、P2X和碳管理的联合展示。"),
-        ("03", "园区绿电直连一体化规划算法", "支持不同规划周期测算，自动推荐成本更优的绿电直连方案。"),
-    ]
-    for col, (num, title, text) in zip(cols, innovations):
-        with col:
-            st.markdown(f'<div class="innovation-card"><div>{num}</div><b>{title}</b><span>{text}</span></div>', unsafe_allow_html=True)
+    section_label("方案成本对比")
+    st.plotly_chart(green_cost_figure(costs), use_container_width=True)
+    st.markdown(f'<div class="best-strip">推荐方案：<b>{best_name}</b>，规划期成本约 {costs[best_name]:.1f} 万元</div>', unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame({"方案": list(costs.keys()), "规划期成本/万元": list(costs.values())}), use_container_width=True, hide_index=True)
+
+
+def export_page() -> None:
+    page_title("结果导出", "导出当前场景的输入、调度、投资、指标、滚动日志和计算图。")
+    simulation = require_result()
+    if simulation is None:
+        return
+    section_label("可导出内容")
+    pills(["input_summary.csv", "input_profiles_used.csv", "dispatch_results.csv", "investment_results.csv", "key_indicators.csv", "rolling_log.csv", "实时计算图"])
+    zip_buffer = simulation["zip"]
+    zip_buffer.seek(0)
+    st.download_button(
+        "下载当前场景完整结果包",
+        data=zip_buffer.getvalue(),
+        file_name="green_electricity_realtime_results.zip",
+        mime="application/zip",
+        type="primary",
+        use_container_width=True,
+    )
+    st.dataframe(simulation["summary"], use_container_width=True, hide_index=True)
+
+
+def architecture_page() -> None:
+    page_title("工程架构", "说明平台如何把输入、模型、结果和决策模块组织成可复现工程。")
+    section_label("模块划分")
+    architecture = pd.DataFrame(
+        [
+            ["参数配置", "接收设备容量、成本、燃料价格、约束和CSV时序数据", "StoreMoreInputs + DataFrame"],
+            ["源荷生成", "无CSV时自动生成负荷、风光出力系数和购售电价曲线", "profiles"],
+            ["容量规划", "按需求和投资上限给出光伏、风电、储能新增容量", "investment_results"],
+            ["滚动优化", "48小时窗口求解线性规划，每日保存前24小时，SOC跨窗口传递", "dispatch_results"],
+            ["指标后处理", "计算绿电占比、弃电、缺电、碳排、运行成本、投资成本", "key_indicators"],
+            ["绿电直连", "由当前调度结果折算年绿电缺口并比较三类补充方案", "cost comparison"],
+        ],
+        columns=["模块", "功能", "数据输出"],
+    )
+    st.dataframe(architecture, use_container_width=True, hide_index=True)
+
+    section_label("嵌入算法")
+    algorithms = pd.DataFrame(
+        [
+            ["线性规划调度", "最小化燃料、购电、储能、弃电和缺电惩罚成本", "参数配置与运行、实时结果图"],
+            ["滚动时域优化", "用48小时预测窗口滚动求解，保留前24小时真实调度结果", "参数配置与运行、调度综合指标"],
+            ["储能SOC递推", "充放电效率、小时损耗和末端SOC跨窗口传递", "实时结果图"],
+            ["RPS约束", "约束可再生能源发电占比不低于目标值", "参数配置与运行、调度综合指标"],
+            ["CO2约束", "用气电碳排因子约束模拟期折算排放", "参数配置与运行、调度综合指标"],
+            ["CEEP约束", "限制弃电电量占负荷比例", "参数配置与运行、调度综合指标"],
+            ["绿电直连成本筛选", "按实时绿电缺口、规划年限、损耗和电价计算三类方案成本", "绿电直连规划"],
+        ],
+        columns=["算法", "作用", "对应页面"],
+    )
+    st.dataframe(algorithms, use_container_width=True, hide_index=True)
+
+    section_label("严谨性边界")
+    st.info(
+        "当前版本定位为园区综合能源系统线性规划与调度决策平台。它不声称替代真实潮流计算、继电保护校核或电网接入审查；"
+        "若用于工程落地，应继续接入配电网潮流、安全约束、电价合同和设备实测数据。"
+    )
 
 
 def main() -> None:
-    _init_state()
-    page = _sidebar()
-    try:
-        if page == "平台概述":
-            overview_page()
-        elif page == "系统构建与运行机制设置":
-            system_page()
-        elif page == "StoreMore仿真优化":
-            storemore_simulation_page()
-        elif page == "调度结果图":
-            dispatch_page()
-        elif page == "调度综合指标分析":
-            metrics_page()
-        elif page == "常见案例对比分析":
-            case_page()
-        elif page == "绿电直连补充方式":
-            green_direct_page()
-        else:
-            innovation_page()
-    except FileNotFoundError as exc:
-        empty_hint("缺少数据文件", f"请确认 data/results 和 assets/figures 已随仓库提交。详细信息：{exc}")
-    except Exception as exc:
-        empty_hint("页面加载失败", str(exc))
-        if st.checkbox("显示调试信息"):
-            st.exception(exc)
+    init_state()
+    page = sidebar()
+    if page == "平台概览":
+        overview_page()
+    elif page == "参数配置与运行":
+        parameter_run_page()
+    elif page == "实时结果图":
+        realtime_results_page()
+    elif page == "调度综合指标":
+        indicator_page()
+    elif page == "绿电直连规划":
+        green_direct_page()
+    elif page == "结果导出":
+        export_page()
+    elif page == "工程架构":
+        architecture_page()
 
 
 if __name__ == "__main__":
