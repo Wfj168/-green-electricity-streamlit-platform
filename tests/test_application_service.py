@@ -12,6 +12,7 @@ from src.storemore_engine import (
     default_storage_table,
     simple_capacity_planning,
 )
+from src.version import PLATFORM_VERSION
 from tests.test_realtime_regression import default_inputs
 
 
@@ -58,7 +59,7 @@ def test_service_success_includes_model_traceability_metadata() -> None:
     response = SimulationService().run(request_with_defaults())
 
     assert response["success"] is True
-    assert response["metadata"]["platform_version"] == "0.2.0"
+    assert response["metadata"]["platform_version"] == PLATFORM_VERSION
     assert response["metadata"]["model_version"] == "storemore-lp-1.0"
 
 

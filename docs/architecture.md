@@ -9,6 +9,7 @@ Streamlit UI (app.py)
 Application Service (src/application)
         |
         +--> Input schemas and validation (src/core)
+        +--> Persistence repository (src/persistence)
         |
         v
 Realtime LP engine (src/storemore_engine.py)
@@ -29,6 +30,7 @@ V17 county-region integrated energy model (src/model)
 - `src/application`：编排一次优化请求，将界面输入交给校验与模型层，并返回结构化成功或失败结果。
 - `src/core`：定义稳定的输入结构、错误码和表格校验规则，不依赖Streamlit。
 - `src/storemore_engine.py`：执行源荷生成、容量规划、滚动线性优化、指标计算和结果打包。
+- `src/persistence`：管理数据库迁移，以及项目、场景、数据集、模型任务、结果和审计记录。
 - `src/model_adapter.py`：适配V17 S0—S8/R0—R4综合能源模型。
 
 ## 已建立的兼容边界
@@ -40,4 +42,4 @@ V17 county-region integrated energy model (src/model)
 
 ## 下一阶段
 
-阶段2将增加持久化仓储接口，先以SQLite完成本地和测试环境，再通过同一接口支持PostgreSQL。项目、场景、数据集、模型任务和结果将获得独立版本及审计字段。
+阶段3将在当前仓储层之上建立FastAPI和后台任务执行器。SQLite用于本地与自动测试；生产环境的PostgreSQL适配将在容器化阶段加入，不改变上层业务对象。
