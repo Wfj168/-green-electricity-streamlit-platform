@@ -1,3 +1,6 @@
-from src.api.main import create_app
+"""HTTP API package.
 
-__all__ = ["create_app"]
+Import ``create_app`` from ``src.api.main`` when constructing the server.
+Keeping package initialization side-effect free prevents UI clients from
+creating a local database merely by importing the API client.
+"""

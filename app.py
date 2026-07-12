@@ -9,6 +9,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from src.application import SimulationRequest, SimulationService
+from src.api.client import ApiClientError, PlatformApiClient
 from src.core.schemas import StoreMoreInputs
 from src.storemore_engine import (
     csv_template,
@@ -41,6 +42,7 @@ inject_global_css()
 
 PAGES = [
     "平台概览",
+    "项目与任务",
     "参数配置与运行",
     "实时结果图",
     "调度综合指标",
@@ -466,6 +468,108 @@ def overview_page() -> None:
     pills(["线性规划", "滚动时域调度", "RPS约束", "CO2约束", "CEEP约束", "储能SOC递推", "绿电直连成本测算"])
 
 
+def project_task_page() -> None:
+    page_title("项目与任务", "保存版本化场景、提交后台优化任务，并查看可追溯的历史结果。")
+    client = PlatformApiClient()
+    if not client.configured:
+        st.warning("当前仍在原型直算模式。配置 PLATFORM_API_URL 后即可启用项目、场景和后台任务管理。")
+        st.code("PLATFORM_API_URL=http://127.0.0.1:8000", language="text")
+        st.info("现有“参数配置与运行”及结果页面不受影响，可继续用于单用户实时演示。")
+        return
+
+    try:
+        health = client.health()
+        status_box(
+            "后台服务已连接",
+            f"平台版本 {health['version']} · 模型版本 {health['model_version']}",
+            ok=True,
+        )
+        projects = client.list_projects()
+    except ApiClientError as exc:
+        status_box("后台服务不可用", str(exc), ok=False)
+        return
+
+    section_label("项目管理")
+    with st.form("create_project_form"):
+        c1, c2 = st.columns([1, 2])
+        project_name = c1.text_input("项目名称", placeholder="例如：示范工业园区")
+        project_description = c2.text_input("项目说明", placeholder="数据范围、目标或客户名称")
+        create_project_clicked = st.form_submit_button("创建项目", type="primary")
+    if create_project_clicked:
+        try:
+            client.create_project(project_name, project_description)
+            st.success("项目已创建。")
+            st.rerun()
+        except ApiClientError as exc:
+            st.error(str(exc))
+
+    if not projects:
+        empty_hint("暂无项目", "请先创建一个项目，再保存场景并提交优化任务。")
+        return
+
+    project_labels = {project["id"]: project["name"] for project in projects}
+    project_id = st.selectbox(
+        "当前项目",
+        options=list(project_labels),
+        format_func=lambda value: project_labels[value],
+    )
+
+    section_label("提交当前参数")
+    current_inputs = input_dict()
+    if not current_inputs:
+        st.info("尚未运行当前会话参数，将使用默认实时场景参数创建后台任务。")
+        default_input = build_inputs(
+            "Default project scenario", 1_000_000.0, 25, 90.0, 70.0, 500.0,
+            True, 35.0, False, 100_000.0, False, 20.0, True, False, 3, "CN",
+        )
+        current_inputs = asdict(default_input)
+    scenario_payload = {
+        "inputs": current_inputs,
+        "generator_table": st.session_state["generator_table"].to_dict(orient="records"),
+        "storage_table": st.session_state["storage_table"].to_dict(orient="records"),
+        "fuel_table": st.session_state["fuel_table"].to_dict(orient="records"),
+        "capex_table": st.session_state["capex_table"].to_dict(orient="records"),
+    }
+    with st.form("submit_project_job_form"):
+        scenario_name = st.text_input("场景版本名称", value=current_inputs.get("scenario_name", "realtime scenario"))
+        submit_job_clicked = st.form_submit_button("保存场景并提交后台计算", type="primary")
+    if submit_job_clicked:
+        try:
+            scenario = client.create_scenario(project_id, scenario_name, scenario_payload)
+            job = client.create_job(project_id, scenario["id"])
+            st.success(f"任务已进入队列：{job['id']}")
+            st.rerun()
+        except ApiClientError as exc:
+            st.error(str(exc))
+
+    section_label("任务记录")
+    try:
+        jobs = client.list_jobs(project_id)
+    except ApiClientError as exc:
+        st.error(str(exc))
+        return
+    if not jobs:
+        empty_hint("暂无任务", "保存当前参数并提交后台计算后，任务会显示在这里。")
+        return
+    job_table = pd.DataFrame(jobs)
+    visible_columns = ["id", "status", "progress", "created_at", "started_at", "finished_at", "error_message"]
+    st.dataframe(job_table[[column for column in visible_columns if column in job_table]], hide_index=True)
+    selected_job_id = st.selectbox("查看任务", options=[job["id"] for job in jobs])
+    selected_job = next(job for job in jobs if job["id"] == selected_job_id)
+    if selected_job["status"] in {"queued", "running"} and st.button("取消所选任务"):
+        try:
+            client.cancel_job(selected_job_id)
+            st.rerun()
+        except ApiClientError as exc:
+            st.error(str(exc))
+    if selected_job["status"] == "succeeded" and st.button("读取所选任务结果"):
+        try:
+            persisted_result = client.get_result(selected_job_id)
+            st.json(persisted_result)
+        except ApiClientError as exc:
+            st.error(str(exc))
+
+
 def parameter_run_page() -> None:
     page_title("参数配置与运行", "先建立园区系统边界，再运行实时优化，后续页面全部读取本次计算结果。")
 
@@ -749,6 +853,8 @@ def main() -> None:
     page = sidebar()
     if page == "平台概览":
         overview_page()
+    elif page == "项目与任务":
+        project_task_page()
     elif page == "参数配置与运行":
         parameter_run_page()
     elif page == "实时结果图":
