@@ -180,6 +180,13 @@ class PlatformRepository:
     ) -> dict[str, Any]:
         job_id = str(uuid4())
         with self.database.transaction() as connection:
+            scenario = connection.execute(
+                "SELECT project_id FROM scenario_versions WHERE id = ?", (scenario_version_id,)
+            ).fetchone()
+            if scenario is None:
+                raise KeyError(f"场景版本不存在：{scenario_version_id}")
+            if scenario["project_id"] != project_id:
+                raise ValueError("场景版本不属于指定项目")
             connection.execute(
                 """
                 INSERT INTO optimization_jobs(
@@ -188,6 +195,43 @@ class PlatformRepository:
                 ) VALUES (?, ?, ?, ?, 'queued', ?, 0, ?, ?)
                 """,
                 (job_id, project_id, scenario_version_id, model_version_id, _json(request), created_by, utc_now()),
+            )
+        return self.get_job(job_id)
+
+    def list_jobs(self, project_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        parameters: list[str] = []
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            parameters.append(project_id)
+        if status is not None:
+            if status not in ALLOWED_JOB_TRANSITIONS:
+                raise ValueError(f"不支持的任务状态：{status}")
+            clauses.append("status = ?")
+            parameters.append(status)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                f"SELECT * FROM optimization_jobs{where} ORDER BY created_at DESC", parameters
+            ).fetchall()
+        return [_decode_json_fields(dict(row), ("request_json",)) for row in rows]
+
+    def claim_next_job(self) -> dict[str, Any] | None:
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT id FROM optimization_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return None
+            job_id = row["id"]
+            now = utc_now()
+            connection.execute(
+                """
+                UPDATE optimization_jobs
+                SET status = 'running', progress = 1, started_at = ?
+                WHERE id = ? AND status = 'queued'
+                """,
+                (now, job_id),
             )
         return self.get_job(job_id)
 

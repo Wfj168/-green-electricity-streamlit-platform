@@ -1,6 +1,6 @@
 # 园区低碳规划与绿电直连优化平台
 
-当前版本：`0.3.0`（持久化与版本管理阶段）
+当前版本：`0.4.0`（API与任务执行阶段）
 
 这是一个可部署到 Streamlit Cloud 的园区综合能源系统优化平台。平台不是静态结果展示页，而是围绕“参数输入、滚动优化、实时图表、指标校核、绿电直连决策、结果导出”形成闭环。
 
@@ -19,6 +19,13 @@
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
+```
+
+本地启动API和单次任务Worker：
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port 8000
+python worker.py --once
 ```
 
 ## 开发验证

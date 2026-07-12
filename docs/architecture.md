@@ -22,6 +22,17 @@ V17 adapter (src/model_adapter.py)
         |
         v
 V17 county-region integrated energy model (src/model)
+
+FastAPI (api.py)
+        |
+        +--> Persistence repository
+        +--> Database job queue
+                    |
+                    v
+              Worker (worker.py)
+                    |
+                    +--> SimulationService
+                    +--> Local artifact store
 ```
 
 ## 分层职责
@@ -42,4 +53,4 @@ V17 county-region integrated energy model (src/model)
 
 ## 下一阶段
 
-阶段3将在当前仓储层之上建立FastAPI和后台任务执行器。SQLite用于本地与自动测试；生产环境的PostgreSQL适配将在容器化阶段加入，不改变上层业务对象。
+当前API与Worker使用数据库队列，适合本地开发、自动测试和单机试运行。容器化阶段将增加PostgreSQL和Redis适配、Worker并发控制与任务租约，保持API数据结构不变。

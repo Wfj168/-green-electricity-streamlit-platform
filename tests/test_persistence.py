@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
 from src.persistence import Database, PlatformRepository
@@ -87,5 +85,5 @@ def test_job_state_machine_rejects_invalid_transition(repository: PlatformReposi
 
     with pytest.raises(ValueError, match="非法任务状态变更"):
         repository.transition_job(job["id"], "succeeded")
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(ValueError, match="场景版本不属于指定项目"):
         repository.create_job("missing-project", scenario["id"], model["id"], {}, "user-1")
