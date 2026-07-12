@@ -1,0 +1,54 @@
+name: green-electricity-platform
+
+x-platform-common: &platform-common
+  build:
+    context: .
+  image: green-electricity-platform:${PLATFORM_IMAGE_TAG:-local}
+  environment: &platform-environment
+    PLATFORM_DB_PATH: /app/var/platform.db
+    PLATFORM_ARTIFACT_DIR: /app/var/artifacts
+    PLATFORM_AUTH_MODE: ${PLATFORM_AUTH_MODE:-disabled}
+    PLATFORM_AUTH_SECRET: ${PLATFORM_AUTH_SECRET:-}
+    PLATFORM_BOOTSTRAP_KEY: ${PLATFORM_BOOTSTRAP_KEY:-}
+    PLATFORM_TOKEN_TTL_SECONDS: ${PLATFORM_TOKEN_TTL_SECONDS:-28800}
+    GIT_COMMIT: ${GIT_COMMIT:-development}
+  volumes:
+    - platform-data:/app/var
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *platform-common
+    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${PLATFORM_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    <<: *platform-common
+    command: ["python", "worker.py", "--poll-seconds", "2"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  ui:
+    <<: *platform-common
+    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment:
+      <<: *platform-environment
+      PLATFORM_API_URL: http://api:8000
+      PLATFORM_USER_ID: ${PLATFORM_USER_ID:-local-user}
+      PLATFORM_ACCESS_TOKEN: ${PLATFORM_ACCESS_TOKEN:-}
+    ports:
+      - "${PLATFORM_UI_PORT:-8501}:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  platform-data:

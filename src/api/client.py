@@ -11,9 +11,16 @@ class ApiClientError(RuntimeError):
 
 
 class PlatformApiClient:
-    def __init__(self, base_url: str | None = None, user_id: str | None = None, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        user_id: str | None = None,
+        access_token: str | None = None,
+        timeout: float = 10.0,
+    ) -> None:
         self.base_url = (base_url or os.getenv("PLATFORM_API_URL", "")).rstrip("/")
         self.user_id = user_id or os.getenv("PLATFORM_USER_ID", "local-user")
+        self.access_token = access_token or os.getenv("PLATFORM_ACCESS_TOKEN", "")
         self.timeout = timeout
 
     @property
@@ -25,6 +32,8 @@ class PlatformApiClient:
             raise ApiClientError("尚未配置PLATFORM_API_URL")
         headers = dict(kwargs.pop("headers", {}))
         headers["X-User-ID"] = self.user_id
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
         try:
             response = requests.request(
                 method,

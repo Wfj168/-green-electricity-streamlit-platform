@@ -58,3 +58,27 @@ def test_worker_executes_queued_job_and_persists_artifact(tmp_path) -> None:
     artifact_path = Path(unquote(urlparse(result["artifact_uri"]).path.lstrip("/")))
     assert artifact_path.exists()
     assert len(result["checksum_sha256"]) == 64
+
+
+def test_token_authentication_enforces_roles(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PLATFORM_AUTH_MODE", "token")
+    monkeypatch.setenv("PLATFORM_AUTH_SECRET", "s" * 32)
+    monkeypatch.setenv("PLATFORM_BOOTSTRAP_KEY", "bootstrap-key-123456")
+    app = create_app(tmp_path / "auth.db")
+    client = TestClient(app)
+
+    assert client.get("/api/v1/projects").status_code == 401
+    viewer_token = client.post(
+        "/api/v1/auth/token",
+        json={"bootstrap_key": "bootstrap-key-123456", "user_id": "viewer-1", "role": "viewer"},
+    ).json()["access_token"]
+    viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
+    assert client.get("/api/v1/projects", headers=viewer_headers).status_code == 200
+    assert client.post("/api/v1/projects", json={"name": "禁止创建"}, headers=viewer_headers).status_code == 403
+
+    engineer_token = client.post(
+        "/api/v1/auth/token",
+        json={"bootstrap_key": "bootstrap-key-123456", "user_id": "engineer-1", "role": "engineer"},
+    ).json()["access_token"]
+    engineer_headers = {"Authorization": f"Bearer {engineer_token}"}
+    assert client.post("/api/v1/projects", json={"name": "允许创建"}, headers=engineer_headers).status_code == 201

@@ -37,3 +37,6 @@ jobs:
 
       - name: Run regression suite
         run: pytest
+
+      - name: Build deployment image
+        run: docker build -t green-electricity-platform:ci .

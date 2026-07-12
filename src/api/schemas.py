@@ -22,3 +22,9 @@ class JobCreate(BaseModel):
 
 class JobTransition(BaseModel):
     action: str
+
+
+class TokenRequest(BaseModel):
+    bootstrap_key: str
+    user_id: str = Field(min_length=1, max_length=120)
+    role: str
