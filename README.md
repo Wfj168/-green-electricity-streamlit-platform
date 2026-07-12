@@ -1,5 +1,7 @@
 # 园区低碳规划与绿电直连优化平台
 
+当前版本：`0.1.0`（项目级升级基线）
+
 这是一个可部署到 Streamlit Cloud 的园区综合能源系统优化平台。平台不是静态结果展示页，而是围绕“参数输入、滚动优化、实时图表、指标校核、绿电直连决策、结果导出”形成闭环。
 
 ## 功能
@@ -18,6 +20,16 @@
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+## 开发验证
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest
+```
+
+当前基线、黄金场景和已知工程缺口见[项目级升级基线报告](docs/baseline_report.md)。所有模型重构必须先通过默认72小时实时场景和V17 S0/S4/S8回归测试。
 
 ## Streamlit Cloud 部署
 

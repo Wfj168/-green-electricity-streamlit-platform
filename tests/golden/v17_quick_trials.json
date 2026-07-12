@@ -1,0 +1,55 @@
+{
+  "model_version": "v17.3.9-adapter-baseline",
+  "seed": 42,
+  "n_steps_per_hour": 1,
+  "scenarios": {
+    "S0": {
+      "metrics": {
+        "Social total annual cost": 27433160.32653189,
+        "Annual CO2 emissions": 28352.729529046104,
+        "Annual grid import": 22004.084581206054,
+        "Renewable curtailment rate": 6.071324145166056,
+        "Total multi-energy service rate": 100.0,
+        "Electrolyzer capacity": 0.0
+      },
+      "capacity": {
+        "PV": 36.6044071933133,
+        "WT": 121.10461323730142,
+        "Battery energy": 0.0,
+        "Electrolyzer": 0.0
+      }
+    },
+    "S4": {
+      "metrics": {
+        "Social total annual cost": 25429995.490774103,
+        "Annual CO2 emissions": 11977.045726699034,
+        "Annual grid import": 5861.1965499535345,
+        "Renewable curtailment rate": 5.608463672484676,
+        "Total multi-energy service rate": 100.0,
+        "Electrolyzer capacity": 0.0
+      },
+      "capacity": {
+        "PV": 36.17273050696928,
+        "WT": 132.32918566019669,
+        "Battery energy": 45.82465778308712,
+        "Electrolyzer": 0.0
+      }
+    },
+    "S8": {
+      "metrics": {
+        "Social total annual cost": 25521377.622720357,
+        "Annual CO2 emissions": 10501.103017955544,
+        "Annual grid import": 3979.5168526095267,
+        "Renewable curtailment rate": 4.365394453745721,
+        "Total multi-energy service rate": 100.0,
+        "Electrolyzer capacity": 3.085461447217954
+      },
+      "capacity": {
+        "PV": 36.231814125845645,
+        "WT": 134.4759905325075,
+        "Battery energy": 44.69347929888756,
+        "Electrolyzer": 3.085461447217954
+      }
+    }
+  }
+}

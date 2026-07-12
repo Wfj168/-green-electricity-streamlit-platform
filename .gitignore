@@ -8,3 +8,10 @@ outputs/
 .agents/
 .codex/
 *.log
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+.env.*
+!.env.example
