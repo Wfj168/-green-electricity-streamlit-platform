@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from io import BytesIO
 import zipfile
 
@@ -8,30 +7,17 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linprog
 
+from src.core.schemas import StoreMoreInputs
+from src.core.validation import validate_simulation_request
+from src.version import PLATFORM_VERSION, REALTIME_MODEL_VERSION
+
 try:
+    import matplotlib
+
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 except ModuleNotFoundError:  # Streamlit Cloud installs matplotlib from requirements; this keeps local imports robust.
     plt = None
-
-
-@dataclass
-class StoreMoreInputs:
-    scenario_name: str
-    total_demand: float
-    service_life: int
-    import_price: float
-    export_price: float
-    import_export_capacity: float
-    rps_constraint: bool
-    min_res_share: float
-    co2_constraint: bool
-    max_co2: float
-    ceep_constraint: bool
-    max_ceep: float
-    optimize_capacity: bool
-    restrict_investments: bool
-    rolling_days: int
-    country_code: str
 
 
 def default_generator_table() -> pd.DataFrame:
@@ -247,17 +233,21 @@ def simple_capacity_planning(
     storage_df: pd.DataFrame,
     total_demand: float,
     optimize_capacity: bool,
+    restrict_investments: bool = True,
 ) -> tuple[float, float, float]:
     average_load = total_demand / 8760
     solar_max_invest = get_table_value(generator_df, "solar", "Max Investment [MW]", 0.0)
     wind_max_invest = get_table_value(generator_df, "wind", "Max Investment [MW]", 0.0)
     liion_max_invest = get_table_value(storage_df, "Liion storage", "Max Investment [MWh]", 0.0)
     if optimize_capacity:
-        return (
-            min(solar_max_invest, average_load * 2.2),
-            min(wind_max_invest, average_load * 2.5),
-            min(liion_max_invest, average_load * 2.0),
-        )
+        targets = (average_load * 2.2, average_load * 2.5, average_load * 2.0)
+        if restrict_investments:
+            return (
+                min(solar_max_invest, targets[0]),
+                min(wind_max_invest, targets[1]),
+                min(liion_max_invest, targets[2]),
+            )
+        return targets
     return 0.0, 0.0, 0.0
 
 
@@ -696,6 +686,7 @@ def run_storemore_simulation(
     capex_df: pd.DataFrame | None = None,
     uploaded_csv=None,
 ) -> dict[str, object]:
+    validate_simulation_request(inputs, generator_df, storage_df, fuel_df, capex_df)
     required_hours = int(inputs.rolling_days) * 24 + 24
     profiles, profile_source_message = load_profiles_from_csv(
         uploaded_file=uploaded_csv,
@@ -706,7 +697,11 @@ def run_storemore_simulation(
         required_hours=required_hours,
     )
     solar_invest, wind_invest, storage_invest = simple_capacity_planning(
-        generator_df, storage_df, inputs.total_demand, inputs.optimize_capacity
+        generator_df,
+        storage_df,
+        inputs.total_demand,
+        inputs.optimize_capacity,
+        inputs.restrict_investments,
     )
     solar_capacity = get_table_value(generator_df, "solar", "Installed Capacity [MW]", 0.0) + solar_invest
     wind_capacity = get_table_value(generator_df, "wind", "Installed Capacity [MW]", 0.0) + wind_invest
@@ -787,6 +782,8 @@ def run_storemore_simulation(
         {
             "Item": [
                 "Scenario name",
+                "Platform version",
+                "Realtime model version",
                 "RPS constraint",
                 "CO2 constraint",
                 "CEEP constraint",
@@ -806,6 +803,8 @@ def run_storemore_simulation(
             ],
             "Value": [
                 inputs.scenario_name,
+                PLATFORM_VERSION,
+                REALTIME_MODEL_VERSION,
                 inputs.rps_constraint,
                 inputs.co2_constraint,
                 inputs.ceep_constraint,

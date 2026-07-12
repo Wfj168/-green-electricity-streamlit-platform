@@ -8,14 +8,14 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+from src.application import SimulationRequest, SimulationService
+from src.core.schemas import StoreMoreInputs
 from src.storemore_engine import (
-    StoreMoreInputs,
     csv_template,
     default_capex_table,
     default_fuel_table,
     default_generator_table,
     default_storage_table,
-    run_storemore_simulation,
 )
 from src.ui_components import (
     badge,
@@ -141,13 +141,15 @@ def run_scenario(
     capex_df: pd.DataFrame,
     uploaded_csv=None,
 ) -> dict[str, Any]:
-    simulation = run_storemore_simulation(
-        inputs=inputs,
-        generator_df=generator_df,
-        storage_df=storage_df,
-        fuel_df=fuel_df,
-        capex_df=capex_df,
-        uploaded_csv=uploaded_csv,
+    simulation = SimulationService().run(
+        SimulationRequest(
+            inputs=inputs,
+            generator_table=generator_df,
+            storage_table=storage_df,
+            fuel_table=fuel_df,
+            capex_table=capex_df,
+            uploaded_csv=uploaded_csv,
+        )
     )
     if simulation.get("success"):
         st.session_state["simulation_result"] = simulation
