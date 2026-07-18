@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from pathlib import Path
-from urllib.parse import unquote, urlparse
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
@@ -11,7 +9,7 @@ import pytest
 from src.application import get_model_spec
 from src.api.main import create_app
 from src.jobs import JobRunner
-from src.jobs.artifacts import LocalArtifactStore
+from src.jobs.artifacts import LocalArtifactStore, file_uri_to_path
 from src.persistence import Database, PlatformRepository
 from src.version import REALTIME_MODEL_VERSION
 from tests.test_realtime_regression import default_inputs
@@ -96,7 +94,7 @@ def test_worker_executes_queued_job_and_persists_artifact(tmp_path) -> None:
     assert result["summary"]["dispatch_rows"] == 24
     assert result["summary"]["rolling_windows"] == 1
     assert result["artifact_uri"].startswith("file:")
-    artifact_path = Path(unquote(urlparse(result["artifact_uri"]).path.lstrip("/")))
+    artifact_path = file_uri_to_path(result["artifact_uri"])
     assert artifact_path.exists()
     assert len(result["checksum_sha256"]) == 64
 
@@ -129,7 +127,7 @@ def test_worker_persists_each_required_integrated_planning_scenario(tmp_path, sc
     assert result["summary"]["scenario_key"] == scenario_key
     assert result["summary"]["metadata"]["model_kind"] == "integrated_planning"
     assert "Annual CO2 emissions" in result["metrics"]
-    artifact_path = Path(unquote(urlparse(result["artifact_uri"]).path.lstrip("/")))
+    artifact_path = file_uri_to_path(result["artifact_uri"])
     with ZipFile(artifact_path) as archive:
         assert "data/dispatch.csv" in archive.namelist()
 
