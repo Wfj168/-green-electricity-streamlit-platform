@@ -471,17 +471,22 @@ def overview_page() -> None:
 def project_task_page() -> None:
     page_title("项目与任务", "保存版本化场景、提交后台优化任务，并查看可追溯的历史结果。")
     client = PlatformApiClient()
+    if client.configuration_error:
+        status_box("后台地址配置无效", client.configuration_error, ok=False)
+        st.info("平台已停止调用错误地址；其他实时计算与结果页面仍可正常使用。")
+        return
     if not client.configured:
-        st.warning("当前仍在原型直算模式。配置 PLATFORM_API_URL 后即可启用项目、场景和后台任务管理。")
-        st.code("PLATFORM_API_URL=http://127.0.0.1:8000", language="text")
-        st.info("现有“参数配置与运行”及结果页面不受影响，可继续用于单用户实时演示。")
+        status_box("当前为单机演示模式", "实时优化、图表、指标和结果导出均可使用。", ok=True)
+        st.info("项目版本、后台任务和历史结果需要连接平台后台服务后启用。")
+        with st.expander("部署人员：查看后台连接配置"):
+            st.code("PLATFORM_API_URL=http://127.0.0.1:8000", language="text")
         return
 
     try:
         health = client.health()
         status_box(
             "后台服务已连接",
-            f"平台版本 {health['version']} · 模型版本 {health['model_version']}",
+            f"平台版本 {health.get('version', '未知')} · 模型版本 {health.get('model_version', '未知')}",
             ok=True,
         )
         projects = client.list_projects()
