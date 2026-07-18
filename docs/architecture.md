@@ -8,20 +8,24 @@ Streamlit UI (app.py)
         v
 Application Service (src/application)
         |
+        +--> UnifiedModelService + model catalog
+        |           |
+        |           +--> realtime_dispatch
+        |           +--> integrated_planning
+        |
         +--> Input schemas and validation (src/core)
         +--> Persistence repository (src/persistence)
-        |
-        v
-Realtime LP engine (src/storemore_engine.py)
-        |
-        +--> SciPy HiGHS
-        +--> CSV/DataFrame results
-        +--> ZIP artifacts
-
-V17 adapter (src/model_adapter.py)
-        |
-        v
-V17 county-region integrated energy model (src/model)
+                    |
+          +---------+---------+
+          |                   |
+          v                   v
+Realtime LP engine       V17 adapter/model
+(src/storemore_engine)   (src/model_adapter + src/model)
+          |                   |
+          +---------+---------+
+                    |
+                    v
+       Unified result summary + ZIP artifact
 
 FastAPI (api.py)
         |
@@ -31,24 +35,28 @@ FastAPI (api.py)
                     v
               Worker (worker.py)
                     |
-                    +--> SimulationService
+                    +--> UnifiedModelService
                     +--> Local artifact store
 ```
 
 ## 分层职责
 
 - `app.py`：只负责用户交互、页面状态和结果展示，不定义优化规则。
-- `src/application`：编排一次优化请求，将界面输入交给校验与模型层，并返回结构化成功或失败结果。
+- `src/application`：维护模型目录，按`model_kind`路由快速调度或V17综合能源规划，并返回统一成功/失败结果、元数据、摘要、指标和成果包。
 - `src/core`：定义稳定的输入结构、错误码和表格校验规则，不依赖Streamlit。
 - `src/storemore_engine.py`：执行源荷生成、容量规划、滚动线性优化、指标计算和结果打包。
 - `src/persistence`：管理数据库迁移，以及项目、场景、数据集、模型任务、结果和审计记录。
 - `src/model_adapter.py`：适配V17 S0—S8/R0—R4综合能源模型。
+- `src/api`：提供模型目录、项目、场景、任务和结果接口；API不直接执行耗时求解。
+- `src/jobs`：领取数据库任务，通过统一模型服务执行并原子写入成果包。
 
 ## 已建立的兼容边界
 
 - `StoreMoreInputs`从核心领域模块导出，旧代码仍可通过`src.storemore_engine.StoreMoreInputs`访问。
 - 应用服务失败结果包含稳定的`error.code`、`error.message`和`error.issues`。
 - 成功结果包含`platform_version`和`model_version`，导出包的`input_summary.csv`也记录版本。
+- 任务请求使用`realtime_dispatch`或`integrated_planning`模型类型；旧任务未带类型时继续按快速调度执行。
+- 两类后台任务都持久化统一`summary`、`metrics`和ZIP成果包，包内包含`execution.json`执行清单。
 - 模型重构不得绕过`tests/golden`中的黄金基线。
 
 ## 下一阶段

@@ -6,6 +6,7 @@ import sqlite3
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
+from src.application import get_model_spec, list_model_specs
 from src.api.schemas import JobCreate, JobTransition, ProjectCreate, ScenarioCreate, TokenRequest
 from src.persistence import Database, PlatformRepository
 from src.security import AuthService, Principal
@@ -38,10 +39,19 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         return dependency
 
     @app.get("/health")
-    def health() -> dict[str, str]:
+    def health() -> dict[str, object]:
         with repository.database.connect() as connection:
             connection.execute("SELECT 1").fetchone()
-        return {"status": "ok", "version": PLATFORM_VERSION, "model_version": REALTIME_MODEL_VERSION}
+        return {
+            "status": "ok",
+            "version": PLATFORM_VERSION,
+            "model_version": REALTIME_MODEL_VERSION,
+            "models": list_model_specs(),
+        }
+
+    @app.get("/api/v1/models")
+    def list_models(principal: Principal = Depends(current_principal)):
+        return list_model_specs()
 
     @app.post("/api/v1/auth/token")
     def issue_token(payload: TokenRequest):
@@ -90,11 +100,17 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             project = repository.get_project(project_id)
             if project["owner_id"] != principal.user_id:
                 raise HTTPException(status_code=403, detail="无权访问该项目")
+            model_spec = get_model_spec(payload.model_kind)
             model = repository.register_model_version(
-                "storemore", REALTIME_MODEL_VERSION, "scipy-highs", os.getenv("GIT_COMMIT", "development")
+                model_spec.name,
+                model_spec.version,
+                model_spec.engine,
+                os.getenv("GIT_COMMIT", "development"),
             )
+            job_request = dict(payload.request)
+            job_request["model_kind"] = model_spec.kind.value
             job = repository.create_job(
-                project_id, payload.scenario_version_id, model["id"], payload.request, principal.user_id
+                project_id, payload.scenario_version_id, model["id"], job_request, principal.user_id
             )
             repository.append_audit(principal.user_id, "job.queued", "job", job["id"])
             return job

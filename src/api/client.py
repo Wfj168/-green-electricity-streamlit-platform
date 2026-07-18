@@ -79,12 +79,21 @@ class PlatformApiClient:
             "POST", f"/api/v1/projects/{project_id}/scenarios", json={"name": name, "inputs": inputs}
         )
 
-    def create_job(self, project_id: str, scenario_version_id: str) -> dict[str, Any]:
+    def create_job(
+        self,
+        project_id: str,
+        scenario_version_id: str,
+        model_kind: str = "realtime_dispatch",
+        request: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return self._request(
             "POST",
             f"/api/v1/projects/{project_id}/jobs",
-            json={"scenario_version_id": scenario_version_id, "request": {}},
+            json={"scenario_version_id": scenario_version_id, "model_kind": model_kind, "request": request or {}},
         )
+
+    def list_models(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/api/v1/models")
 
     def list_jobs(self, project_id: str | None = None) -> list[dict[str, Any]]:
         params = {"project_id": project_id} if project_id else None

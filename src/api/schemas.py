@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ class ScenarioCreate(BaseModel):
 
 class JobCreate(BaseModel):
     scenario_version_id: str
+    model_kind: Literal["realtime_dispatch", "integrated_planning"] = "realtime_dispatch"
     request: dict[str, Any] = Field(default_factory=dict)
 
 
