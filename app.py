@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import json
 from typing import Any
 
 import pandas as pd
@@ -11,6 +12,9 @@ from plotly.subplots import make_subplots
 from src.application import (
     GreenDirectRequest,
     GreenDirectService,
+    ForecastService,
+    IntradayRollingRequest,
+    IntradayRollingService,
     ModelExecutionRequest,
     ModelExecutionResult,
     ModelKind,
@@ -23,7 +27,13 @@ from src.application import (
     list_integrated_scenarios,
 )
 from src.api.client import ApiClientError, PlatformApiClient
-from src.core import IntegratedPlanningConfig, scenario_fingerprint
+from src.core import (
+    FifteenMinuteDataContract,
+    IntegratedPlanningConfig,
+    TimeSeriesValidationResult,
+    sample_15min_data,
+    scenario_fingerprint,
+)
 from src.core.schemas import StoreMoreInputs
 from src.storemore_engine import (
     csv_template,
@@ -58,6 +68,7 @@ REALTIME_PAGES = [
     "平台概览",
     "项目与任务",
     "参数配置与运行",
+    "数据与预测",
     "实时结果图",
     "调度综合指标",
     "绿电直连规划",
@@ -69,6 +80,7 @@ INTEGRATED_PAGES = [
     "平台概览",
     "项目与任务",
     "参数配置与运行",
+    "数据与预测",
     "多能流结果",
     "综合规划指标",
     "场景对比",
@@ -95,6 +107,10 @@ def init_state() -> None:
         "integrated_result": None,
         "integrated_payload": None,
         "scenario_comparison_result": None,
+        "timeseries_validation": None,
+        "forecast_evaluation": None,
+        "day_ahead_forecast": None,
+        "intraday_plan": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1138,6 +1154,167 @@ def realtime_parameter_run_page() -> None:
             st.info("可以适当放宽绿电占比、CO2上限或弃电率约束，也可以提高购售电容量上限后重新运行。")
 
 
+def data_forecast_page() -> None:
+    page_title("15分钟数据与预测", "校验源荷与价格数据，比较预测基准，生成日前96点预测和日内滚动请求。")
+    sample = sample_15min_data(days=14, seed=42)
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.download_button(
+            "下载15分钟数据模板",
+            data=sample.head(96).to_csv(index=False).encode("utf-8-sig"),
+            file_name="15min_data_template.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+        load_sample = st.button("加载14天示例数据并检查", use_container_width=True)
+    with c2:
+        uploaded = st.file_uploader(
+            "上传15分钟CSV",
+            type=["csv"],
+            help="必填列：timestamp、electric_load_mw、pv_available_mw、wind_available_mw、electricity_price_cny_per_mwh。",
+        )
+
+    source = None
+    if load_sample:
+        source = sample
+    elif uploaded is not None:
+        try:
+            source = pd.read_csv(uploaded)
+        except (ValueError, pd.errors.ParserError, UnicodeDecodeError) as exc:
+            st.error(f"CSV读取失败：{exc}")
+    if source is not None:
+        st.session_state["timeseries_validation"] = FifteenMinuteDataContract().validate(source)
+        st.session_state["forecast_evaluation"] = None
+        st.session_state["day_ahead_forecast"] = None
+        st.session_state["intraday_plan"] = None
+
+    validation = st.session_state.get("timeseries_validation")
+    if not isinstance(validation, TimeSeriesValidationResult):
+        empty_hint("尚未加载15分钟数据", "可上传CSV，或使用示例数据完成数据质量和预测流程演示。")
+        return
+
+    summary = validation.summary
+    cols = st.columns(4)
+    with cols[0]:
+        metric_card("数据点", str(summary["rows"]), "条", "blue", "N")
+    with cols[1]:
+        metric_card("时间间隔", str(summary["frequency_minutes"]), "分钟", "green", "T")
+    with cols[2]:
+        metric_card("错误", str(summary["error_count"]), "项", "orange", "E")
+    with cols[3]:
+        metric_card("质量状态", "通过" if validation.valid else "未通过", "", "purple", "Q")
+    if validation.issues:
+        section_label("数据质量问题")
+        st.dataframe(validation.issues_frame(), use_container_width=True, hide_index=True)
+    if not validation.valid:
+        st.warning("必须修正全部error后才能进入预测和滚动运行。错误已定位到字段、CSV行号和时间戳。")
+        return
+
+    data = validation.data
+    section_label("数据预览")
+    preview = data.head(7 * 96)
+    fig = go.Figure()
+    for column, label, color in (
+        ("electric_load_mw", "电负荷", "#111827"),
+        ("pv_available_mw", "光伏可用", "#f59e0b"),
+        ("wind_available_mw", "风电可用", "#22c55e"),
+    ):
+        fig.add_trace(go.Scatter(x=preview["timestamp"], y=preview[column], name=label, line=dict(color=color)))
+    fig.update_layout(title="前7天源荷数据")
+    fig.update_yaxes(title="功率 / MW")
+    st.plotly_chart(plot_layout(fig, height=380), use_container_width=True)
+
+    if st.button("评估基准并生成日前96点预测", type="primary", use_container_width=True):
+        try:
+            service = ForecastService()
+            evaluation = service.evaluate_baselines(data, validation_points=7 * 96)
+            forecast = service.day_ahead(data, evaluation)
+            st.session_state["forecast_evaluation"] = evaluation
+            st.session_state["day_ahead_forecast"] = forecast
+            st.session_state["intraday_plan"] = None
+        except ValueError as exc:
+            st.error(str(exc))
+
+    evaluation = st.session_state.get("forecast_evaluation")
+    forecast = st.session_state.get("day_ahead_forecast")
+    if evaluation is None or forecast is None:
+        return
+    section_label("预测基准评估")
+    st.dataframe(evaluation.metrics, use_container_width=True, hide_index=True)
+    st.info(
+        f"按验证集MAE自动选择 {evaluation.best_model}。训练截止 {evaluation.training_end}，"
+        f"验证区间 {evaluation.validation_start} 至 {evaluation.validation_end}。"
+    )
+    history = data[["timestamp", "electric_load_mw"]].tail(96)
+    forecast_column = f"forecast_{forecast.target}"
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(x=history["timestamp"], y=history["electric_load_mw"], name="最近实际负荷", line=dict(width=2))
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast.data["timestamp"], y=forecast.data[forecast_column], name="日前预测负荷",
+            line=dict(width=3, dash="dash", color="#ef4444"),
+        )
+    )
+    fig.update_layout(title="日前96点负荷预测")
+    fig.update_yaxes(title="电负荷 / MW")
+    st.plotly_chart(plot_layout(fig, height=380), use_container_width=True)
+    st.caption(f"预测版本：{forecast.version_id} · 算法：{forecast.model_name}")
+    st.download_button(
+        "下载日前96点预测",
+        data=forecast.data.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{forecast.version_id}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+    section_label("日内15分钟滚动请求")
+    with st.form("intraday_plan_form"):
+        c1, c2, c3, c4 = st.columns(4)
+        operation_scenario = c1.selectbox("运行场景", ["R0", "R1", "R2", "R3", "R4"], index=4)
+        horizon = int(c2.number_input("滚动窗口 / 15分钟点", 1, 96, 16, 1))
+        battery_soc = c3.slider("最新电储能SOC / %", 0.0, 100.0, 50.0, 1.0)
+        thermal_soc = c4.slider("最新蓄热SOC / %", 0.0, 100.0, 50.0, 1.0)
+        build_plan = st.form_submit_button("生成日内滚动请求", use_container_width=True)
+    if build_plan:
+        try:
+            plan = IntradayRollingService().build_plan(
+                IntradayRollingRequest(
+                    forecast=forecast,
+                    scenario_key=operation_scenario,
+                    horizon_intervals=horizon,
+                    battery_soc_fraction=battery_soc / 100.0,
+                    thermal_soc_fraction=thermal_soc / 100.0,
+                )
+            )
+            st.session_state["intraday_plan"] = plan
+        except ValueError as exc:
+            st.error(str(exc))
+    plan = st.session_state.get("intraday_plan")
+    if plan is not None:
+        st.success(
+            f"已生成请求 {plan.run_id}，继承预测版本 {plan.forecast_version} 和最新电/热储能SOC。"
+        )
+        st.json(
+            {
+                "run_id": plan.run_id,
+                "scenario_key": plan.scenario_key,
+                "interval_minutes": plan.interval_minutes,
+                "horizon_intervals": plan.horizon_intervals,
+                "forecast_version": plan.forecast_version,
+                "inherited_state": plan.inherited_state,
+            }
+        )
+        st.download_button(
+            "下载日内滚动请求JSON",
+            data=json.dumps(plan.model_payload, ensure_ascii=False, indent=2, default=str),
+            file_name=f"{plan.run_id}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
+
 def realtime_results_page() -> None:
     if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
         page_title("综合能源规划结果", "查看当前V17场景的容量配置和多能协同调度明细。")
@@ -1568,6 +1745,8 @@ def main() -> None:
         project_task_page()
     elif page == "参数配置与运行":
         parameter_run_page()
+    elif page == "数据与预测":
+        data_forecast_page()
     elif page in {"实时结果图", "多能流结果"}:
         realtime_results_page()
     elif page in {"调度综合指标", "综合规划指标"}:

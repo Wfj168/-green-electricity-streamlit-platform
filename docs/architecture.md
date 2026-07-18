@@ -47,6 +47,9 @@ FastAPI (api.py)
 - `src/application/green_direct_service.py`：统一快速调度绿电缺口成本计算和V17绿电直连指标读取，页面不再承载成本公式。
 - `src/core`：定义稳定的输入结构、错误码和表格校验规则，不依赖Streamlit。
 - `src/core/integrated_config.py`：定义V17页面配置结构、跨字段依赖校验、版本化载荷和SHA-256参数指纹。
+- `src/core/timeseries_contract.py`：定义15分钟必填列、单位、时间间隔和逐行数据质量问题结构。
+- `src/application/forecast_service.py`：执行季节朴素与近期均值基准评估，记录训练/验证区间并生成版本化日前96点预测。
+- `src/application/intraday_service.py`：生成继承预测版本和最新电/热储能SOC的15分钟日内滚动请求。
 - `src/storemore_engine.py`：执行源荷生成、容量规划、滚动线性优化、指标计算和结果打包。
 - `src/persistence`：管理数据库迁移，以及项目、场景、数据集、模型任务、结果和审计记录。
 - `src/model_adapter.py`：适配V17 S0—S8/R0—R4综合能源模型。

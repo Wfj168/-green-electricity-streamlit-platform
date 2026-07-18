@@ -9,7 +9,7 @@ def test_all_streamlit_pages_render_without_uncaught_exceptions() -> None:
     assert len(app.radio) == 1
 
     navigation = app.radio[0]
-    assert len(navigation.options) == 8
+    assert len(navigation.options) == 9
     for page in navigation.options:
         navigation.set_value(page)
         app.run(timeout=30)
@@ -48,6 +48,7 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
         "平台概览",
         "项目与任务",
         "参数配置与运行",
+        "数据与预测",
         "多能流结果",
         "综合规划指标",
         "场景对比",
@@ -69,3 +70,24 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
     comparison = app.session_state["scenario_comparison_result"]
     assert comparison.success is True
     assert comparison.table["Scenario"].tolist() == [f"S{index}" for index in range(9)]
+
+
+def test_data_forecast_and_intraday_page_runs_end_to_end() -> None:
+    app = AppTest.from_file("app.py", default_timeout=60).run()
+    app.radio[0].set_value("数据与预测")
+    app.run(timeout=60)
+
+    next(button for button in app.button if button.label == "加载14天示例数据并检查").click()
+    app.run(timeout=60)
+    assert app.session_state["timeseries_validation"].valid is True
+
+    next(button for button in app.button if button.label == "评估基准并生成日前96点预测").click()
+    app.run(timeout=60)
+    forecast = app.session_state["day_ahead_forecast"]
+    assert forecast.horizon_points == 96
+
+    next(button for button in app.button if button.label == "生成日内滚动请求").click()
+    app.run(timeout=60)
+    plan = app.session_state["intraday_plan"]
+    assert plan.forecast_version == forecast.version_id
+    assert plan.inherited_state == {"battery_soc_fraction": 0.5, "thermal_soc_fraction": 0.5}
