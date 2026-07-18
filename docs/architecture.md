@@ -55,6 +55,8 @@ FastAPI (api.py)
 - `src/model_adapter.py`：适配V17 S0—S8/R0—R4综合能源模型。
 - `src/api`：提供模型目录、项目、场景、任务和结果接口；API不直接执行耗时求解。
 - `src/jobs`：领取数据库任务，通过统一模型服务执行并原子写入成果包。
+- `src/observability`：输出API与Worker单行JSON日志，并关联请求、任务和错误标识。
+- `src/operations`：创建、校验和恢复数据库与成果备份，覆盖恢复前自动生成回滚包。
 
 ## 已建立的兼容边界
 
@@ -66,6 +68,8 @@ FastAPI (api.py)
 - 前台模型模式只改变导航和页面数据源，不修改求解器；V17页面提交`integrated-planning-v1`结构，快速调度继续使用`StoreMoreInputs`。
 - 模型重构不得绕过`tests/golden`中的黄金基线。
 
-## 下一阶段
+## 当前生产工程边界
 
-当前API与Worker使用数据库队列，适合本地开发、自动测试和单机试运行。容器化阶段将增加PostgreSQL和Redis适配、Worker并发控制与任务租约，保持API数据结构不变。
+当前API与Worker使用SQLite/WAL数据库队列，已经实现原子领取、项目级幂等键、Worker租约、心跳、超时恢复、最大重试和结果所有权保护，适合单服务器受控试点与项目交付。API提供就绪探针、任务状态指标、请求编号和管理员审计；备份恢复提供SHA-256与SQLite完整性校验。
+
+跨主机高可用仍需后续接入PostgreSQL、Redis或专业任务队列、S3兼容对象存储、企业SSO和集中监控。适配时应保持现有应用服务、仓储和成果存储接口不变。

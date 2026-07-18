@@ -12,6 +12,7 @@ outputs/
 .ruff_cache/
 .coverage
 htmlcov/
+.docx_qa/
 .env
 .env.*
 !.env.example
