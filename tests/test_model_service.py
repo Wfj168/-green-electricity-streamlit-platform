@@ -56,6 +56,8 @@ def test_unified_service_runs_v17_planning_scenarios(scenario_key: str) -> None:
     assert result.summary["scenario_key"] == scenario_key
     assert result.summary["dispatch_rows"] > 0
     assert "Annual CO2 emissions" in result.metrics
+    assert result.tables is not None
+    assert {"capacity", "dispatch", "cost", "carbon", "metrics", "diagnostics"}.issubset(result.tables)
     assert result.artifact_bytes
     with ZipFile(BytesIO(result.artifact_bytes)) as archive:
         assert {"data/dispatch.csv", "data/metrics.csv", "execution.json", "scenario.json"}.issubset(

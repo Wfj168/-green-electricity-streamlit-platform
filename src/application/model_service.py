@@ -14,7 +14,7 @@ import pandas as pd
 
 from src.application.simulation_service import SimulationRequest, SimulationService
 from src.core.schemas import StoreMoreInputs
-from src.model_adapter import run_quick_trial
+from src.model_adapter import build_scenario, run_quick_trial
 from src.storemore_engine import (
     default_capex_table,
     default_fuel_table,
@@ -77,6 +77,25 @@ def list_model_specs() -> list[dict[str, str]]:
     return [MODEL_CATALOG[kind].to_dict() for kind in ModelKind]
 
 
+def list_integrated_scenarios() -> list[dict[str, str]]:
+    scenarios = []
+    for index in range(9):
+        key = f"S{index}"
+        scenario = build_scenario(key)
+        scenarios.append(
+            {
+                "key": key,
+                "name": str(scenario.get("name", key)),
+                "description": str(scenario.get("description", "")),
+            }
+        )
+    return scenarios
+
+
+def get_integrated_scenario(scenario_key: str) -> dict[str, Any]:
+    return build_scenario(scenario_key)
+
+
 @dataclass(frozen=True, slots=True)
 class ModelExecutionRequest:
     model_kind: ModelKind | str
@@ -93,6 +112,7 @@ class ModelExecutionResult:
     summary: dict[str, Any]
     metrics: dict[str, Any]
     artifact_bytes: bytes | None
+    tables: dict[str, pd.DataFrame] | None = None
 
 
 STOREMORE_INPUT_FIELDS = {item.name for item in fields(StoreMoreInputs)}
@@ -151,6 +171,7 @@ class UnifiedModelService:
             summary=result.summary,
             metrics=result.metrics,
             artifact_bytes=result.artifact_bytes,
+            tables=result.tables,
         )
 
     def _run_realtime(self, request: ModelExecutionRequest, spec: ModelSpec) -> ModelExecutionResult:
@@ -208,6 +229,12 @@ class UnifiedModelService:
             summary,
             metrics,
             artifact_bytes,
+            {
+                "dispatch": simulation["dispatch"],
+                "metrics": simulation["metrics"],
+                "investment": simulation["investment"],
+                "rolling_log": simulation["rolling_log"],
+            },
         )
 
     def _run_integrated_planning(self, request: ModelExecutionRequest, spec: ModelSpec) -> ModelExecutionResult:
@@ -275,6 +302,12 @@ class UnifiedModelService:
             summary,
             metrics,
             artifact_bytes,
+            {
+                key: value
+                for key, value in raw_result.items()
+                if isinstance(value, pd.DataFrame)
+            }
+            | {"profiles": trial["profiles"]},
         )
 
     @staticmethod

@@ -44,6 +44,7 @@ FastAPI (api.py)
 - `app.py`：只负责用户交互、页面状态和结果展示，不定义优化规则。
 - `src/application`：维护模型目录，按`model_kind`路由快速调度或V17综合能源规划，并返回统一成功/失败结果、元数据、摘要、指标和成果包。
 - `src/core`：定义稳定的输入结构、错误码和表格校验规则，不依赖Streamlit。
+- `src/core/integrated_config.py`：定义V17页面配置结构、跨字段依赖校验、版本化载荷和SHA-256参数指纹。
 - `src/storemore_engine.py`：执行源荷生成、容量规划、滚动线性优化、指标计算和结果打包。
 - `src/persistence`：管理数据库迁移，以及项目、场景、数据集、模型任务、结果和审计记录。
 - `src/model_adapter.py`：适配V17 S0—S8/R0—R4综合能源模型。
@@ -57,6 +58,7 @@ FastAPI (api.py)
 - 成功结果包含`platform_version`和`model_version`，导出包的`input_summary.csv`也记录版本。
 - 任务请求使用`realtime_dispatch`或`integrated_planning`模型类型；旧任务未带类型时继续按快速调度执行。
 - 两类后台任务都持久化统一`summary`、`metrics`和ZIP成果包，包内包含`execution.json`执行清单。
+- 前台模型模式只改变导航和页面数据源，不修改求解器；V17页面提交`integrated-planning-v1`结构，快速调度继续使用`StoreMoreInputs`。
 - 模型重构不得绕过`tests/golden`中的黄金基线。
 
 ## 下一阶段

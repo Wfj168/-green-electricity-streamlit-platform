@@ -8,8 +8,18 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from src.application import SimulationRequest, SimulationService
+from src.application import (
+    ModelExecutionRequest,
+    ModelExecutionResult,
+    ModelKind,
+    SimulationRequest,
+    SimulationService,
+    UnifiedModelService,
+    get_integrated_scenario,
+    list_integrated_scenarios,
+)
 from src.api.client import ApiClientError, PlatformApiClient
+from src.core import IntegratedPlanningConfig, scenario_fingerprint
 from src.core.schemas import StoreMoreInputs
 from src.storemore_engine import (
     csv_template,
@@ -40,7 +50,7 @@ st.set_page_config(
 inject_global_css()
 
 
-PAGES = [
+REALTIME_PAGES = [
     "平台概览",
     "项目与任务",
     "参数配置与运行",
@@ -51,6 +61,22 @@ PAGES = [
     "工程架构",
 ]
 
+INTEGRATED_PAGES = [
+    "平台概览",
+    "项目与任务",
+    "参数配置与运行",
+    "多能流结果",
+    "综合规划指标",
+    "绿电直连规划",
+    "结果导出",
+    "工程架构",
+]
+
+MODEL_LABELS = {
+    ModelKind.REALTIME_DISPATCH.value: "快速电力滚动调度",
+    ModelKind.INTEGRATED_PLANNING.value: "V17综合能源规划",
+}
+
 
 def init_state() -> None:
     defaults: dict[str, Any] = {
@@ -60,6 +86,9 @@ def init_state() -> None:
         "storage_table": default_storage_table(),
         "fuel_table": default_fuel_table(),
         "capex_table": default_capex_table(),
+        "model_kind": ModelKind.REALTIME_DISPATCH.value,
+        "integrated_result": None,
+        "integrated_payload": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -69,6 +98,16 @@ def init_state() -> None:
 def result() -> dict[str, Any] | None:
     value = st.session_state.get("simulation_result")
     return value if isinstance(value, dict) and value.get("success") else None
+
+
+def integrated_result() -> ModelExecutionResult | None:
+    value = st.session_state.get("integrated_result")
+    return value if isinstance(value, ModelExecutionResult) and value.success else None
+
+
+def current_model_kind() -> str:
+    value = str(st.session_state.get("model_kind", ModelKind.REALTIME_DISPATCH.value))
+    return value if value in MODEL_LABELS else ModelKind.REALTIME_DISPATCH.value
 
 
 def metrics_dict(simulation: dict[str, Any]) -> dict[str, float]:
@@ -203,6 +242,14 @@ def require_result(message: str = "请先在“参数配置与运行”页面完
             st.rerun()
         return None
     return simulation
+
+
+def require_integrated_result() -> ModelExecutionResult | None:
+    execution = integrated_result()
+    if execution is None:
+        empty_hint("尚未生成综合规划结果", "请先在“参数配置与运行”页面选择S0—S8场景并完成综合能源规划。")
+        return None
+    return execution
 
 
 def plot_layout(fig: go.Figure, height: int = 430) -> go.Figure:
@@ -392,6 +439,19 @@ def render_result_cards(simulation: dict[str, Any]) -> None:
         metric_card("综合成本", fmt(metrics.get("Total cost proxy [EUR]", 0)), "EUR", "purple", "¥")
 
 
+def render_integrated_result_cards(execution: ModelExecutionResult) -> None:
+    metrics = execution.metrics
+    cols = st.columns(4)
+    with cols[0]:
+        metric_card("年度碳排放", fmt(metrics.get("Annual CO2 emissions", 0)), "tCO2", "orange", "C")
+    with cols[1]:
+        metric_card("年度电网购电", fmt(metrics.get("Annual grid import", 0)), "MWh", "blue", "G")
+    with cols[2]:
+        metric_card("新能源弃电率", fmt(metrics.get("Renewable curtailment rate", 0)), "%", "green", "R")
+    with cols[3]:
+        metric_card("多能服务率", fmt(metrics.get("Total multi-energy service rate", 0)), "%", "purple", "S")
+
+
 def sidebar() -> str:
     with st.sidebar:
         st.markdown(
@@ -406,9 +466,33 @@ def sidebar() -> str:
             """,
             unsafe_allow_html=True,
         )
-        selected = st.radio("功能导航", PAGES, label_visibility="collapsed")
+        selected_model_label = st.selectbox(
+            "模型模式",
+            options=list(MODEL_LABELS.values()),
+            index=list(MODEL_LABELS).index(current_model_kind()),
+            help="快速调度用于小时级电力运行；V17用于电、热、冷、气、储能、柔性负荷、碳与P2X协同规划。",
+        )
+        st.session_state["model_kind"] = next(
+            key for key, label in MODEL_LABELS.items() if label == selected_model_label
+        )
+        pages = (
+            INTEGRATED_PAGES
+            if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value
+            else REALTIME_PAGES
+        )
+        selected = st.radio("功能导航", pages, label_visibility="collapsed")
         st.divider()
-        if result() is None:
+        if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+            execution = integrated_result()
+            if execution is None:
+                status_box("当前状态", "尚未完成综合能源规划，请先配置场景并运行模型。", ok=False)
+            else:
+                status_box(
+                    "当前状态",
+                    f"已完成场景：{execution.summary.get('scenario_name', execution.summary.get('scenario_key', '-'))}",
+                    ok=True,
+                )
+        elif result() is None:
             status_box("当前状态", "尚未完成实时计算，请先配置参数并运行模型。", ok=False)
         else:
             inputs = input_dict()
@@ -417,20 +501,18 @@ def sidebar() -> str:
                 f"已完成场景：{inputs.get('scenario_name', 'current scenario')}",
                 ok=True,
             )
-        st.markdown(
-            """
-            <div class="sidebar-note">
-              本平台的图表和指标来自当前参数下的滚动线性优化结果。修改参数后需要重新运行，后续页面会自动读取新的计算结果。
-            </div>
-            """,
-            unsafe_allow_html=True,
+        mode_note = (
+            "综合规划结果来自当前S0—S8场景和参数覆盖项。修改设备、储能、柔性负荷、碳或P2X参数后需要重新运行。"
+            if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value
+            else "图表和指标来自当前参数下的滚动线性优化结果。修改参数后需要重新运行。"
         )
+        st.markdown(f'<div class="sidebar-note">{mode_note}</div>', unsafe_allow_html=True)
     return selected
 
 
 def overview_page() -> None:
     page_title("园区低碳规划与绿电直连优化平台", "面向园区综合能源系统的参数建模、实时优化、指标分析与绿电直连决策支持。")
-    badge("实时计算平台")
+    badge(MODEL_LABELS[current_model_kind()])
     st.markdown(
         """
         <div class="overview-panel">
@@ -446,26 +528,30 @@ def overview_page() -> None:
     )
 
     simulation = result()
-    if simulation is not None:
-        section_label("当前实时结果")
+    planning = integrated_result()
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value and planning is not None:
+        section_label("当前综合规划结果")
+        render_integrated_result_cards(planning)
+    elif current_model_kind() == ModelKind.REALTIME_DISPATCH.value and simulation is not None:
+        section_label("当前快速调度结果")
         render_result_cards(simulation)
     else:
-        empty_hint("尚未运行模型", "进入“参数配置与运行”页面后，可以使用默认参数或上传时序数据完成第一次计算。")
+        empty_hint("尚未运行当前模型", "进入“参数配置与运行”页面后，完成当前模型模式的参数配置和第一次计算。")
 
     section_label("业务流程")
     cols = st.columns(4)
     cards = [
-        ("1 参数建模", "配置电源、储能、燃料价格、约束和源荷时序，形成优化问题输入。"),
-        ("2 滚动优化", "以48小时窗口滚动求解，每次保存前24小时调度结果，维持储能SOC连续。"),
-        ("3 结果分析", "生成电力平衡、储能SOC、购售电行为、成本、碳排和约束执行检查。"),
-        ("4 决策输出", "基于计算结果测算绿电直连缺口和规划成本，并导出完整结果包。"),
+        ("1 模型选型", "按业务目标选择快速电力调度或V17综合能源规划。"),
+        ("2 系统配置", "配置设备、储能、柔性负荷、碳、绿电直连和P2X参数。"),
+        ("3 优化求解", "通过统一模型服务执行线性规划、滚动优化或综合规划。"),
+        ("4 决策交付", "保存场景版本、比较指标并导出可追溯成果包。"),
     ]
     for col, (title, body) in zip(cols, cards):
         with col:
             st.markdown(f'<div class="feature-card"><b>{title}</b><span>{body}</span></div>', unsafe_allow_html=True)
 
     section_label("核心模型能力")
-    pills(["线性规划", "滚动时域调度", "RPS约束", "CO2约束", "CEEP约束", "储能SOC递推", "绿电直连成本测算"])
+    pills(["双模型目录", "滚动时域调度", "电热冷气协同", "储能与柔性负荷", "碳约束", "绿电直连", "P2X/绿氢"])
 
 
 def project_task_page() -> None:
@@ -520,28 +606,43 @@ def project_task_page() -> None:
     )
 
     section_label("提交当前参数")
-    current_inputs = input_dict()
-    if not current_inputs:
-        st.info("尚未运行当前会话参数，将使用默认实时场景参数创建后台任务。")
-        default_input = build_inputs(
-            "Default project scenario", 1_000_000.0, 25, 90.0, 70.0, 500.0,
-            True, 35.0, False, 100_000.0, False, 20.0, True, False, 3, "CN",
-        )
-        current_inputs = asdict(default_input)
-    scenario_payload = {
-        "inputs": current_inputs,
-        "generator_table": st.session_state["generator_table"].to_dict(orient="records"),
-        "storage_table": st.session_state["storage_table"].to_dict(orient="records"),
-        "fuel_table": st.session_state["fuel_table"].to_dict(orient="records"),
-        "capex_table": st.session_state["capex_table"].to_dict(orient="records"),
-    }
+    model_kind = current_model_kind()
+    if model_kind == ModelKind.INTEGRATED_PLANNING.value:
+        scenario_payload = st.session_state.get("integrated_payload")
+        if not isinstance(scenario_payload, dict):
+            st.info("尚未运行综合规划，将使用S4默认配置创建后台任务。")
+            scenario_payload = IntegratedPlanningConfig.from_scenario(
+                "S4", get_integrated_scenario("S4")
+            ).to_payload()
+        default_scenario_name = str(scenario_payload.get("scenario_key", "S4"))
+    else:
+        current_inputs = input_dict()
+        if not current_inputs:
+            st.info("尚未运行当前会话参数，将使用默认实时场景参数创建后台任务。")
+            default_input = build_inputs(
+                "Default project scenario", 1_000_000.0, 25, 90.0, 70.0, 500.0,
+                True, 35.0, False, 100_000.0, False, 20.0, True, False, 3, "CN",
+            )
+            current_inputs = asdict(default_input)
+        scenario_payload = {
+            "schema_version": "realtime-dispatch-v1",
+            "model_kind": ModelKind.REALTIME_DISPATCH.value,
+            "inputs": current_inputs,
+            "generator_table": st.session_state["generator_table"].to_dict(orient="records"),
+            "storage_table": st.session_state["storage_table"].to_dict(orient="records"),
+            "fuel_table": st.session_state["fuel_table"].to_dict(orient="records"),
+            "capex_table": st.session_state["capex_table"].to_dict(orient="records"),
+        }
+        default_scenario_name = str(current_inputs.get("scenario_name", "realtime scenario"))
+    fingerprint = scenario_fingerprint(scenario_payload)
+    st.caption(f"模型：{MODEL_LABELS[model_kind]} · 参数指纹：{fingerprint[:12]}")
     with st.form("submit_project_job_form"):
-        scenario_name = st.text_input("场景版本名称", value=current_inputs.get("scenario_name", "realtime scenario"))
+        scenario_name = st.text_input("场景版本名称", value=default_scenario_name)
         submit_job_clicked = st.form_submit_button("保存场景并提交后台计算", type="primary")
     if submit_job_clicked:
         try:
             scenario = client.create_scenario(project_id, scenario_name, scenario_payload)
-            job = client.create_job(project_id, scenario["id"])
+            job = client.create_job(project_id, scenario["id"], model_kind=model_kind)
             st.success(f"任务已进入队列：{job['id']}")
             st.rerun()
         except ApiClientError as exc:
@@ -575,7 +676,204 @@ def project_task_page() -> None:
             st.error(str(exc))
 
 
+def integrated_parameter_run_page() -> None:
+    page_title(
+        "综合能源系统配置与运行",
+        "选择S0—S8场景，配置电、热、冷、储能、柔性负荷、碳、绿电直连和P2X参数。",
+    )
+    scenario_catalog = list_integrated_scenarios()
+    scenario_labels = {item["key"]: item["name"] for item in scenario_catalog}
+    scenario_key = st.selectbox(
+        "规划场景模板",
+        options=list(scenario_labels),
+        index=4,
+        format_func=lambda key: scenario_labels[key],
+        help="模板定义技术组合与政策目标；页面中的参数会作为可追溯覆盖项写入场景版本。",
+    )
+    scenario_definition = get_integrated_scenario(scenario_key)
+    base = IntegratedPlanningConfig.from_scenario(scenario_key, scenario_definition)
+    st.info(str(scenario_definition.get("description", "")))
+
+    key_prefix = f"v17_{scenario_key.lower()}"
+    with st.form(f"integrated_configuration_{scenario_key}"):
+        section_label("运行口径")
+        c1, c2, c3 = st.columns(3)
+        resolution = c1.selectbox(
+            "时间分辨率",
+            options=[1, 2, 4],
+            index=[1, 2, 4].index(base.n_steps_per_hour),
+            format_func=lambda value: {1: "60分钟", 2: "30分钟", 4: "15分钟"}[value],
+            key=f"{key_prefix}_resolution",
+        )
+        seed = int(
+            c2.number_input(
+                "可复现随机种子",
+                min_value=0,
+                max_value=1_000_000,
+                value=base.seed,
+                step=1,
+                key=f"{key_prefix}_seed",
+            )
+        )
+        c3.text_input("参数模式", value="场景模板 + 页面覆盖项", disabled=True)
+
+        equipment_tab, storage_tab, flexible_tab, carbon_tab, green_tab, p2x_tab = st.tabs(
+            ["设备", "储能", "柔性负荷", "碳约束", "绿电直连", "P2X/绿氢"]
+        )
+        with equipment_tab:
+            st.caption("容量均为规划上限；0表示不允许新增该技术。")
+            c1, c2, c3 = st.columns(3)
+            max_pv = c1.number_input("光伏上限 / MW", 0.0, 2000.0, base.max_pv_capacity, 10.0)
+            max_wt = c2.number_input("风电上限 / MW", 0.0, 2000.0, base.max_wt_capacity, 10.0)
+            max_chp = c3.number_input("热电联产上限 / MW", 0.0, 1000.0, base.max_chp_capacity, 5.0)
+            c4, c5, c6 = st.columns(3)
+            max_hp = c4.number_input("热泵上限 / MWth", 0.0, 1000.0, base.max_hp_capacity, 5.0)
+            max_ec = c5.number_input("电制冷上限 / MWc", 0.0, 1000.0, base.max_ec_capacity, 5.0)
+            max_gb = c6.number_input("燃气锅炉上限 / MWth", 0.0, 1000.0, base.max_gb_capacity, 5.0)
+
+        with storage_tab:
+            c1, c2 = st.columns(2)
+            enable_battery = c1.checkbox("启用电化学储能", value=base.enable_battery)
+            enable_thermal_storage = c2.checkbox("启用蓄热储能", value=base.enable_thermal_storage)
+            c3, c4, c5, c6 = st.columns(4)
+            battery_energy = c3.number_input(
+                "电储能能量上限 / MWh", 0.0, 3000.0, base.max_battery_energy_capacity, 10.0,
+                disabled=not enable_battery,
+            )
+            battery_power = c4.number_input(
+                "电储能功率上限 / MW", 0.0, 1000.0, base.max_battery_power_capacity, 5.0,
+                disabled=not enable_battery,
+            )
+            thermal_energy = c5.number_input(
+                "蓄热能量上限 / MWhth", 0.0, 3000.0, base.max_thermal_storage_energy_capacity, 10.0,
+                disabled=not enable_thermal_storage,
+            )
+            thermal_power = c6.number_input(
+                "蓄热功率上限 / MWth", 0.0, 1000.0, base.max_thermal_storage_power_capacity, 5.0,
+                disabled=not enable_thermal_storage,
+            )
+
+        with flexible_tab:
+            c1, c2 = st.columns(2)
+            enable_flexible = c1.checkbox("启用日内可转移负荷", value=base.enable_flexible_load)
+            shift_ratio = c1.slider(
+                "日内最大可转移电量 / %", 0.0, 30.0, 100.0 * base.max_daily_shift_energy_ratio, 1.0,
+                disabled=not enable_flexible,
+            )
+            enable_interruptible = c2.checkbox("启用可中断负荷", value=base.enable_interruptible_load)
+            interruptible_ratio = c2.slider(
+                "最大可中断负荷比例 / %", 0.0, 20.0, 100.0 * base.interruptible_load_ratio, 0.5,
+                disabled=not enable_interruptible,
+            )
+
+        with carbon_tab:
+            c1, c2 = st.columns(2)
+            enable_carbon = c1.checkbox("启用碳排放上限", value=base.enable_carbon_constraint)
+            internalize_carbon = c2.checkbox("在目标函数中计入碳成本", value=base.internalize_carbon_price)
+            c3, c4 = st.columns(2)
+            carbon_cap_ratio = c3.slider(
+                "相对S0碳排上限 / %", 1.0, 100.0, 100.0 * base.co2_cap_ratio_to_s0, 1.0,
+                disabled=not enable_carbon,
+            )
+            carbon_price = c4.number_input(
+                "碳市场价格 / CNY-tCO2", 0.0, 2000.0, base.carbon_market_price_cny_per_tco2, 10.0,
+            )
+
+        with green_tab:
+            c1, c2, c3 = st.columns(3)
+            park_green_share = c1.slider(
+                "园区最低绿电覆盖 / %", 0.0, 100.0,
+                100.0 * base.min_industrial_park_green_electricity_share, 1.0,
+            )
+            green_direct_share = c2.slider(
+                "绿电直连目标覆盖 / %", 0.0, 100.0, 100.0 * base.green_direct_target_share, 1.0,
+            )
+            renewable_utilization = c3.slider(
+                "最低新能源利用率 / %", 0.0, 100.0, 100.0 * base.min_renewable_utilization_rate, 1.0,
+            )
+
+        with p2x_tab:
+            enable_p2x = st.checkbox("启用内生P2X/绿氢优化", value=base.enable_endogenous_p2x)
+            c1, c2, c3 = st.columns(3)
+            p2x_heat_share = c1.slider(
+                "最低工艺热替代 / %", 0.0, 100.0,
+                100.0 * base.p2x_min_process_heat_substitution_share, 1.0,
+                disabled=not enable_p2x,
+            )
+            electrolyzer_capacity = c2.number_input(
+                "电解槽容量上限 / MW", 0.0, 1000.0, base.max_electrolyzer_capacity, 5.0,
+                disabled=not enable_p2x,
+            )
+            p2x_power_share = c3.slider(
+                "P2X最多使用新能源电量 / %", 0.0, 100.0,
+                100.0 * base.max_p2x_electricity_share_of_renewable_generation, 1.0,
+                disabled=not enable_p2x,
+            )
+
+        submit_integrated = st.form_submit_button("开始综合能源规划", type="primary", use_container_width=True)
+
+    config = IntegratedPlanningConfig(
+        scenario_key=scenario_key,
+        n_steps_per_hour=int(resolution),
+        seed=seed,
+        max_pv_capacity=max_pv,
+        max_wt_capacity=max_wt,
+        max_chp_capacity=max_chp,
+        max_hp_capacity=max_hp,
+        max_ec_capacity=max_ec,
+        max_gb_capacity=max_gb,
+        enable_battery=enable_battery,
+        enable_thermal_storage=enable_thermal_storage,
+        max_battery_energy_capacity=battery_energy,
+        max_battery_power_capacity=battery_power,
+        max_thermal_storage_energy_capacity=thermal_energy,
+        max_thermal_storage_power_capacity=thermal_power,
+        enable_flexible_load=enable_flexible,
+        max_daily_shift_energy_ratio=shift_ratio / 100.0,
+        enable_interruptible_load=enable_interruptible,
+        interruptible_load_ratio=interruptible_ratio / 100.0,
+        enable_carbon_constraint=enable_carbon,
+        internalize_carbon_price=internalize_carbon,
+        co2_cap_ratio_to_s0=carbon_cap_ratio / 100.0,
+        carbon_market_price_cny_per_tco2=carbon_price,
+        min_industrial_park_green_electricity_share=park_green_share / 100.0,
+        green_direct_target_share=green_direct_share / 100.0,
+        min_renewable_utilization_rate=renewable_utilization / 100.0,
+        enable_endogenous_p2x=enable_p2x,
+        p2x_min_process_heat_substitution_share=p2x_heat_share / 100.0,
+        max_electrolyzer_capacity=electrolyzer_capacity,
+        max_p2x_electricity_share_of_renewable_generation=p2x_power_share / 100.0,
+    )
+    payload = config.to_payload()
+    issues = config.validate()
+    st.caption(f"参数结构：integrated-planning-v1 · 参数指纹：{scenario_fingerprint(payload)[:12]}")
+    if issues:
+        for issue in issues:
+            st.error(f"{issue.field}：{issue.message}")
+    if submit_integrated and not issues:
+        with st.spinner("正在构建V17综合能源规划模型并求解..."):
+            execution = UnifiedModelService().run(
+                ModelExecutionRequest(ModelKind.INTEGRATED_PLANNING, payload)
+            )
+        st.session_state["integrated_result"] = execution
+        st.session_state["integrated_payload"] = payload
+        if execution.success:
+            st.success("综合能源规划完成，结果已保存到当前会话，可继续提交后台任务。")
+            render_integrated_result_cards(execution)
+        else:
+            st.error(execution.message)
+    elif submit_integrated:
+        st.warning("请先修正上述参数问题，再启动模型。")
+
+
 def parameter_run_page() -> None:
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+        integrated_parameter_run_page()
+    else:
+        realtime_parameter_run_page()
+
+
+def realtime_parameter_run_page() -> None:
     page_title("参数配置与运行", "先建立园区系统边界，再运行实时优化，后续页面全部读取本次计算结果。")
 
     with st.container():
@@ -661,6 +959,27 @@ def parameter_run_page() -> None:
 
 
 def realtime_results_page() -> None:
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+        page_title("综合能源规划结果", "查看当前V17场景的容量配置和多能协同调度明细。")
+        execution = require_integrated_result()
+        if execution is None:
+            return
+        render_integrated_result_cards(execution)
+        tables = execution.tables or {}
+        capacity_tab, dispatch_tab, cost_tab, carbon_tab, diagnostic_tab = st.tabs(
+            ["容量", "多能调度", "成本", "碳排", "诊断"]
+        )
+        with capacity_tab:
+            st.dataframe(tables.get("capacity", pd.DataFrame()), use_container_width=True, hide_index=True)
+        with dispatch_tab:
+            st.dataframe(tables.get("dispatch", pd.DataFrame()), use_container_width=True, hide_index=True)
+        with cost_tab:
+            st.dataframe(tables.get("cost", pd.DataFrame()), use_container_width=True, hide_index=True)
+        with carbon_tab:
+            st.dataframe(tables.get("carbon", pd.DataFrame()), use_container_width=True, hide_index=True)
+        with diagnostic_tab:
+            st.dataframe(tables.get("diagnostics", pd.DataFrame()), use_container_width=True, hide_index=True)
+        return
     page_title("实时结果图", "所有图表均由当前场景实时计算得到，并随参数变化同步刷新。")
     simulation = require_result()
     if simulation is None:
@@ -685,6 +1004,18 @@ def realtime_results_page() -> None:
 
 
 def indicator_page() -> None:
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+        page_title("综合规划指标", "查看当前V17场景的能源、经济、环境、可靠性和求解指标。")
+        execution = require_integrated_result()
+        if execution is None:
+            return
+        render_integrated_result_cards(execution)
+        section_label("全部模型指标")
+        metrics_table = (execution.tables or {}).get("metrics", pd.DataFrame())
+        st.dataframe(metrics_table, use_container_width=True, hide_index=True)
+        section_label("执行追溯")
+        st.json({"summary": execution.summary, "metadata": execution.metadata})
+        return
     page_title("调度综合指标", "基于实时调度结果计算经济、低碳、可靠性与约束执行情况。")
     simulation = require_result()
     if simulation is None:
@@ -746,6 +1077,28 @@ def indicator_page() -> None:
 
 
 def green_direct_page() -> None:
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+        page_title("绿电直连规划", "读取V17场景内生的园区绿电覆盖、直连筛查和P2X协同结果。")
+        execution = require_integrated_result()
+        if execution is None:
+            return
+        metrics_table = (execution.tables or {}).get("metrics", pd.DataFrame())
+        if not metrics_table.empty and "Metric" in metrics_table:
+            relevant = metrics_table[
+                metrics_table["Metric"].astype(str).str.contains(
+                    "renew|green|direct|p2x|hydrogen|electrolyzer|industrial", case=False, regex=True
+                )
+            ]
+        else:
+            relevant = pd.DataFrame()
+        render_integrated_result_cards(execution)
+        section_label("模型内生筛查指标")
+        if relevant.empty:
+            empty_hint("当前场景未输出专项指标", "可选择S6、S7或S8并启用绿电直连/P2X参数后重新运行。")
+        else:
+            st.dataframe(relevant, use_container_width=True, hide_index=True)
+        st.info("综合规划模式下，本页直接读取V17优化结果，不使用页面固定数字重新计算方案。")
+        return
     page_title("绿电直连规划", "根据当前实时调度结果计算绿电缺口，并比较三类补充方式的规划成本。")
     simulation = require_result()
     if simulation is None:
@@ -796,6 +1149,23 @@ def green_direct_page() -> None:
 
 
 def export_page() -> None:
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+        page_title("结果导出", "导出当前V17场景的容量、调度、成本、碳排、指标、诊断和执行清单。")
+        execution = require_integrated_result()
+        if execution is None:
+            return
+        section_label("可导出内容")
+        pills(["capacity.csv", "dispatch.csv", "cost.csv", "carbon.csv", "metrics.csv", "diagnostics.csv", "execution.json"])
+        st.download_button(
+            "下载当前综合规划完整结果包",
+            data=execution.artifact_bytes or b"",
+            file_name=f"integrated_planning_{execution.summary.get('scenario_key', 'scenario')}.zip",
+            mime="application/zip",
+            type="primary",
+            use_container_width=True,
+        )
+        st.json({"summary": execution.summary, "metadata": execution.metadata})
+        return
     page_title("结果导出", "导出当前场景的输入、调度、投资、指标、滚动日志和计算图。")
     simulation = require_result()
     if simulation is None:
@@ -862,9 +1232,9 @@ def main() -> None:
         project_task_page()
     elif page == "参数配置与运行":
         parameter_run_page()
-    elif page == "实时结果图":
+    elif page in {"实时结果图", "多能流结果"}:
         realtime_results_page()
-    elif page == "调度综合指标":
+    elif page in {"调度综合指标", "综合规划指标"}:
         indicator_page()
     elif page == "绿电直连规划":
         green_direct_page()

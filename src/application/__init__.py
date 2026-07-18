@@ -3,7 +3,9 @@ from src.application.model_service import (
     ModelExecutionResult,
     ModelKind,
     UnifiedModelService,
+    get_integrated_scenario,
     get_model_spec,
+    list_integrated_scenarios,
     list_model_specs,
 )
 from src.application.simulation_service import SimulationRequest, SimulationService
@@ -15,6 +17,8 @@ __all__ = [
     "SimulationRequest",
     "SimulationService",
     "UnifiedModelService",
+    "get_integrated_scenario",
     "get_model_spec",
+    "list_integrated_scenarios",
     "list_model_specs",
 ]
