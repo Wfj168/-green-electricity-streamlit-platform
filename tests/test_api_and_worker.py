@@ -21,7 +21,11 @@ def test_api_project_scenario_job_and_cancel_flow(tmp_path) -> None:
     app = create_app(tmp_path / "api.db")
     client = TestClient(app)
 
-    assert client.get("/health").json()["status"] == "ok"
+    health_response = client.get("/health", headers={"X-Request-ID": "test-request-001"})
+    assert health_response.json()["status"] == "ok"
+    assert health_response.headers["X-Request-ID"] == "test-request-001"
+    assert client.get("/ready").json()["status"] == "ready"
+    assert 'platform_jobs{status="queued"}' in client.get("/metrics").text
     assert {item["kind"] for item in client.get("/api/v1/models").json()} == {
         "realtime_dispatch",
         "integrated_planning",
@@ -52,6 +56,7 @@ def test_api_project_scenario_job_and_cancel_flow(tmp_path) -> None:
             "scenario_version_id": integrated_scenario["id"],
             "model_kind": "integrated_planning",
             "request": {"seed": 42},
+            "idempotency_key": "integrated-S7-request",
         },
     )
     assert integrated_job.status_code == 202
@@ -59,6 +64,16 @@ def test_api_project_scenario_job_and_cancel_flow(tmp_path) -> None:
         "seed": 42,
         "model_kind": "integrated_planning",
     }
+    repeated_job = client.post(
+        f"/api/v1/projects/{project['id']}/jobs",
+        json={
+            "scenario_version_id": integrated_scenario["id"],
+            "model_kind": "integrated_planning",
+            "idempotency_key": "integrated-S7-request",
+        },
+    )
+    assert repeated_job.json()["id"] == integrated_job.json()["id"]
+    assert client.get("/api/v1/audit").status_code == 200
 
 
 def test_worker_executes_queued_job_and_persists_artifact(tmp_path) -> None:
@@ -149,6 +164,7 @@ def test_token_authentication_enforces_roles(tmp_path, monkeypatch) -> None:
     viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
     assert client.get("/api/v1/projects", headers=viewer_headers).status_code == 200
     assert client.post("/api/v1/projects", json={"name": "禁止创建"}, headers=viewer_headers).status_code == 403
+    assert client.get("/api/v1/audit", headers=viewer_headers).status_code == 403
 
     engineer_token = client.post(
         "/api/v1/auth/token",
@@ -156,3 +172,10 @@ def test_token_authentication_enforces_roles(tmp_path, monkeypatch) -> None:
     ).json()["access_token"]
     engineer_headers = {"Authorization": f"Bearer {engineer_token}"}
     assert client.post("/api/v1/projects", json={"name": "允许创建"}, headers=engineer_headers).status_code == 201
+    assert client.get("/api/v1/audit", headers=engineer_headers).status_code == 403
+
+    admin_token = client.post(
+        "/api/v1/auth/token",
+        json={"bootstrap_key": "bootstrap-key-123456", "user_id": "admin-1", "role": "admin"},
+    ).json()["access_token"]
+    assert client.get("/api/v1/audit", headers={"Authorization": f"Bearer {admin_token}"}).status_code == 200

@@ -85,11 +85,21 @@ class PlatformApiClient:
         scenario_version_id: str,
         model_kind: str = "realtime_dispatch",
         request: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        max_attempts: int = 3,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "scenario_version_id": scenario_version_id,
+            "model_kind": model_kind,
+            "request": request or {},
+            "max_attempts": max_attempts,
+        }
+        if idempotency_key:
+            payload["idempotency_key"] = idempotency_key
         return self._request(
             "POST",
             f"/api/v1/projects/{project_id}/jobs",
-            json={"scenario_version_id": scenario_version_id, "model_kind": model_kind, "request": request or {}},
+            json=payload,
         )
 
     def list_models(self) -> list[dict[str, Any]]:

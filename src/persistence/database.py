@@ -10,6 +10,16 @@ from typing import Iterator
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
 
 
+class ManagedConnection(sqlite3.Connection):
+    """SQLite connection that also closes when leaving a with block."""
+
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+        try:
+            return bool(super().__exit__(exc_type, exc_value, traceback))
+        finally:
+            self.close()
+
+
 class Database:
     def __init__(self, path: str | Path | None = None) -> None:
         configured_path = path or os.getenv("PLATFORM_DB_PATH", "var/platform.db")
@@ -17,7 +27,7 @@ class Database:
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=30)
+        connection = sqlite3.connect(self.path, timeout=30, factory=ManagedConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode = WAL")
