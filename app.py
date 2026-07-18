@@ -9,9 +9,13 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from src.application import (
+    GreenDirectRequest,
+    GreenDirectService,
     ModelExecutionRequest,
     ModelExecutionResult,
     ModelKind,
+    ScenarioComparisonResult,
+    ScenarioComparisonService,
     SimulationRequest,
     SimulationService,
     UnifiedModelService,
@@ -67,6 +71,7 @@ INTEGRATED_PAGES = [
     "参数配置与运行",
     "多能流结果",
     "综合规划指标",
+    "场景对比",
     "绿电直连规划",
     "结果导出",
     "工程架构",
@@ -89,6 +94,7 @@ def init_state() -> None:
         "model_kind": ModelKind.REALTIME_DISPATCH.value,
         "integrated_result": None,
         "integrated_payload": None,
+        "scenario_comparison_result": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -108,6 +114,11 @@ def integrated_result() -> ModelExecutionResult | None:
 def current_model_kind() -> str:
     value = str(st.session_state.get("model_kind", ModelKind.REALTIME_DISPATCH.value))
     return value if value in MODEL_LABELS else ModelKind.REALTIME_DISPATCH.value
+
+
+def scenario_comparison_result() -> ScenarioComparisonResult | None:
+    value = st.session_state.get("scenario_comparison_result")
+    return value if isinstance(value, ScenarioComparisonResult) else None
 
 
 def metrics_dict(simulation: dict[str, Any]) -> dict[str, float]:
@@ -424,6 +435,175 @@ def green_cost_figure(costs: dict[str, float]) -> go.Figure:
     fig.update_layout(title="绿电直连方案成本对比")
     fig.update_yaxes(title="规划期成本 / 万元")
     return plot_layout(fig, height=380)
+
+
+def integrated_electric_figure(dispatch: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    colors = {
+        "P_PV": "#f59e0b",
+        "P_WT": "#22c55e",
+        "P_CHP": "#f97316",
+        "P_grid_buy": "#2563eb",
+        "P_BAT_dis": "#8b5cf6",
+    }
+    labels = {
+        "P_PV": "光伏",
+        "P_WT": "风电",
+        "P_CHP": "热电联产发电",
+        "P_grid_buy": "电网购电",
+        "P_BAT_dis": "储能放电",
+    }
+    for column in labels:
+        if column in dispatch:
+            fig.add_trace(
+                go.Scatter(
+                    x=dispatch["hour"],
+                    y=dispatch[column],
+                    name=labels[column],
+                    mode="lines",
+                    stackgroup="electric_supply",
+                    line=dict(width=1.5, color=colors[column]),
+                )
+            )
+    consumption = dispatch.get("electric_load_adjusted", dispatch.get("electric_load", 0)).copy()
+    for column in ("P_HP", "P_EC", "P_ELZ", "P_BAT_ch", "P_grid_sell"):
+        if column in dispatch:
+            consumption = consumption + dispatch[column]
+    fig.add_trace(
+        go.Scatter(
+            x=dispatch["hour"],
+            y=consumption,
+            name="电力总需求",
+            mode="lines",
+            line=dict(width=3, color="#111827"),
+        )
+    )
+    fig.update_layout(title="电力供需与转换用电")
+    fig.update_xaxes(title="典型日时刻 / h")
+    fig.update_yaxes(title="功率 / MW")
+    return plot_layout(fig)
+
+
+def integrated_heat_figure(dispatch: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    columns = {
+        "H_CHP": ("热电联产供热", "#f97316"),
+        "H_HP": ("热泵供热", "#0ea5e9"),
+        "H_GB": ("燃气锅炉供热", "#64748b"),
+        "H_H2": ("绿氢供热", "#10b981"),
+        "H_TS_dis": ("蓄热放热", "#8b5cf6"),
+    }
+    for column, (label, color) in columns.items():
+        if column in dispatch:
+            fig.add_trace(
+                go.Scatter(
+                    x=dispatch["hour"], y=dispatch[column], name=label, mode="lines",
+                    stackgroup="heat_supply", line=dict(width=1.5, color=color),
+                )
+            )
+    heat_demand = dispatch.get("heat_load", 0).copy()
+    if "H_TS_ch" in dispatch:
+        heat_demand = heat_demand + dispatch["H_TS_ch"]
+    fig.add_trace(
+        go.Scatter(
+            x=dispatch["hour"], y=heat_demand, name="热力总需求", mode="lines",
+            line=dict(width=3, color="#111827"),
+        )
+    )
+    fig.update_layout(title="热力供需与绿氢替代")
+    fig.update_xaxes(title="典型日时刻 / h")
+    fig.update_yaxes(title="热功率 / MWth")
+    return plot_layout(fig)
+
+
+def integrated_cooling_figure(dispatch: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    if "C_EC_out" in dispatch:
+        fig.add_trace(
+            go.Scatter(
+                x=dispatch["hour"], y=dispatch["C_EC_out"], name="电制冷供冷",
+                fill="tozeroy", line=dict(width=2, color="#0ea5e9"),
+            )
+        )
+    if "cooling_load" in dispatch:
+        fig.add_trace(
+            go.Scatter(
+                x=dispatch["hour"], y=dispatch["cooling_load"], name="冷负荷",
+                line=dict(width=3, color="#111827"),
+            )
+        )
+    fig.update_layout(title="冷量供需")
+    fig.update_xaxes(title="典型日时刻 / h")
+    fig.update_yaxes(title="冷功率 / MWc")
+    return plot_layout(fig, height=380)
+
+
+def integrated_storage_figure(dispatch: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    if "SOC_BAT" in dispatch:
+        fig.add_trace(
+            go.Scatter(x=dispatch["hour"], y=dispatch["SOC_BAT"], name="电储能SOC", line=dict(width=3))
+        )
+    if "SOC_TS" in dispatch:
+        fig.add_trace(
+            go.Scatter(x=dispatch["hour"], y=dispatch["SOC_TS"], name="蓄热SOC", line=dict(width=3))
+        )
+    fig.update_layout(title="电/热储能状态")
+    fig.update_xaxes(title="典型日时刻 / h")
+    fig.update_yaxes(title="储能量 / MWh")
+    return plot_layout(fig, height=380)
+
+
+def scenario_cost_carbon_figure(table: pd.DataFrame) -> go.Figure:
+    valid = table[table["Success"]].copy()
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Bar(
+            x=valid["Scenario"],
+            y=valid["Social annual cost [EUR/year]"] / 1_000_000.0,
+            name="社会年成本",
+            marker_color="#2563eb",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=valid["Scenario"],
+            y=valid["Annual CO2 [tCO2/year]"],
+            name="年度碳排放",
+            mode="lines+markers",
+            line=dict(width=3, color="#ef4444"),
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(title="S0—S8成本与碳排放")
+    fig.update_yaxes(title_text="社会年成本 / 百万EUR", secondary_y=False)
+    fig.update_yaxes(title_text="年度碳排放 / tCO2", secondary_y=True)
+    return plot_layout(fig)
+
+
+def abatement_frontier_figure(table: pd.DataFrame) -> go.Figure:
+    valid = table[table["Success"]].copy()
+    fig = go.Figure(
+        go.Scatter(
+            x=valid["Annual CO2 [tCO2/year]"],
+            y=valid["Social annual cost [EUR/year]"] / 1_000_000.0,
+            text=valid["Scenario"],
+            mode="markers+text",
+            textposition="top center",
+            marker=dict(
+                size=14,
+                color=valid["CO2 reduction vs S0 [%]"],
+                colorscale="Viridis",
+                showscale=True,
+                colorbar=dict(title="减排/%"),
+            ),
+        )
+    )
+    fig.update_layout(title="成本—碳排权衡前沿")
+    fig.update_xaxes(title="年度碳排放 / tCO2")
+    fig.update_yaxes(title="社会年成本 / 百万EUR")
+    return plot_layout(fig, height=420)
 
 
 def render_result_cards(simulation: dict[str, Any]) -> None:
@@ -966,6 +1146,30 @@ def realtime_results_page() -> None:
             return
         render_integrated_result_cards(execution)
         tables = execution.tables or {}
+        dispatch = tables.get("dispatch", pd.DataFrame())
+        if not dispatch.empty and "day_id" in dispatch:
+            day_ids = dispatch["day_id"].drop_duplicates().tolist()
+            day_labels = {}
+            for day_id in day_ids:
+                day_rows = dispatch[dispatch["day_id"] == day_id]
+                day_name = str(day_rows.iloc[0].get("day_name", day_rows.iloc[0].get("day_type", day_id)))
+                day_labels[day_id] = f"{day_name}（权重 {float(day_rows.iloc[0].get('day_weight', 1)):.0f} 天）"
+            selected_day = st.selectbox(
+                "选择典型日",
+                options=day_ids,
+                format_func=lambda value: day_labels[value],
+            )
+            selected_dispatch = dispatch[dispatch["day_id"] == selected_day].sort_values("hour")
+            section_label("多能流平衡")
+            st.plotly_chart(integrated_electric_figure(selected_dispatch), use_container_width=True)
+            st.plotly_chart(integrated_heat_figure(selected_dispatch), use_container_width=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                st.plotly_chart(integrated_cooling_figure(selected_dispatch), use_container_width=True)
+            with c2:
+                st.plotly_chart(integrated_storage_figure(selected_dispatch), use_container_width=True)
+
+        section_label("结果明细")
         capacity_tab, dispatch_tab, cost_tab, carbon_tab, diagnostic_tab = st.tabs(
             ["容量", "多能调度", "成本", "碳排", "诊断"]
         )
@@ -1010,9 +1214,27 @@ def indicator_page() -> None:
         if execution is None:
             return
         render_integrated_result_cards(execution)
-        section_label("全部模型指标")
         metrics_table = (execution.tables or {}).get("metrics", pd.DataFrame())
-        st.dataframe(metrics_table, use_container_width=True, hide_index=True)
+        section_label("分组指标")
+        groups = {
+            "能源": "renewable|grid import|grid export|storage|flexible|hydrogen|electrolyzer",
+            "经济": "cost|charge|revenue",
+            "环境": "co2|carbon|curtailment",
+            "可靠性": "service rate|unmet|unserved|shortage|autonomy",
+            "园区与P2X": "industrial|green-direct|p2x|low-altitude",
+        }
+        tabs = st.tabs(list(groups) + ["全部"])
+        for tab, (name, pattern) in zip(tabs[:-1], groups.items()):
+            with tab:
+                if metrics_table.empty:
+                    st.dataframe(metrics_table)
+                else:
+                    selected = metrics_table[
+                        metrics_table["Metric"].astype(str).str.contains(pattern, case=False, regex=True)
+                    ]
+                    st.dataframe(selected, use_container_width=True, hide_index=True)
+        with tabs[-1]:
+            st.dataframe(metrics_table, use_container_width=True, hide_index=True)
         section_label("执行追溯")
         st.json({"summary": execution.summary, "metadata": execution.metadata})
         return
@@ -1076,6 +1298,81 @@ def indicator_page() -> None:
     st.dataframe(simulation["investment"], use_container_width=True, hide_index=True)
 
 
+def scenario_comparison_page() -> None:
+    page_title("S0—S8场景对比", "逐场景调用V17模型，比较成本、碳排、新能源、可靠性与减排成本。")
+    if current_model_kind() != ModelKind.INTEGRATED_PLANNING.value:
+        st.info("请先在侧栏将模型模式切换为“V17综合能源规划”。")
+        return
+    catalog = list_integrated_scenarios()
+    labels = {item["key"]: item["name"] for item in catalog}
+    selected_keys = st.multiselect(
+        "参与比较的场景",
+        options=list(labels),
+        default=list(labels),
+        format_func=lambda key: labels[key],
+    )
+    c1, c2 = st.columns(2)
+    n_steps_per_hour = c1.selectbox(
+        "比较分辨率",
+        options=[1, 2, 4],
+        format_func=lambda value: {1: "60分钟（推荐演示）", 2: "30分钟", 4: "15分钟"}[value],
+    )
+    seed = int(c2.number_input("统一随机种子", 0, 1_000_000, 42, 1))
+    if n_steps_per_hour > 1:
+        st.warning("更高时间分辨率会显著增加S0—S8批量求解时间；演示时建议使用60分钟。")
+    if st.button("运行真实场景对比", type="primary", use_container_width=True):
+        try:
+            with st.spinner(f"正在依次求解{len(selected_keys)}个场景并打包原始结果..."):
+                comparison = ScenarioComparisonService().run(
+                    selected_keys,
+                    n_steps_per_hour=int(n_steps_per_hour),
+                    seed=seed,
+                )
+            st.session_state["scenario_comparison_result"] = comparison
+        except ValueError as exc:
+            st.error(str(exc))
+
+    comparison = scenario_comparison_result()
+    if comparison is None:
+        empty_hint("尚未运行场景对比", "点击“运行真实场景对比”后，平台将逐一调用模型，不使用静态演示数据。")
+        return
+    table = comparison.table
+    valid = table[table["Success"]] if not table.empty else pd.DataFrame()
+    if valid.empty:
+        st.error("本次比较没有成功场景，请查看错误信息。")
+    else:
+        cheapest = valid.loc[valid["Social annual cost [EUR/year]"].idxmin()]
+        lowest_carbon = valid.loc[valid["Annual CO2 [tCO2/year]"].idxmin()]
+        highest_reduction = valid.loc[valid["CO2 reduction vs S0 [%]"].idxmax()]
+        cols = st.columns(4)
+        with cols[0]:
+            metric_card("已完成场景", str(len(valid)), "个", "blue", "N")
+        with cols[1]:
+            metric_card("最低成本场景", str(cheapest["Scenario"]), "", "green", "¥")
+        with cols[2]:
+            metric_card("最低碳场景", str(lowest_carbon["Scenario"]), "", "orange", "C")
+        with cols[3]:
+            metric_card("最大减排场景", str(highest_reduction["Scenario"]), "", "purple", "R")
+        st.plotly_chart(scenario_cost_carbon_figure(table), use_container_width=True)
+        st.plotly_chart(abatement_frontier_figure(table), use_container_width=True)
+
+    section_label("场景指标明细")
+    st.dataframe(table, use_container_width=True, hide_index=True)
+    if comparison.errors:
+        st.warning(f"失败场景：{comparison.errors}")
+    st.caption(
+        f"模型版本 {comparison.metadata['model_version']} · 分辨率 {comparison.metadata['n_steps_per_hour']}点/小时 · "
+        f"随机种子 {comparison.metadata['seed']}"
+    )
+    st.download_button(
+        "下载场景对比与全部原始成果包",
+        data=comparison.artifact_bytes,
+        file_name="S0-S8_scenario_comparison.zip",
+        mime="application/zip",
+        use_container_width=True,
+    )
+
+
 def green_direct_page() -> None:
     if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
         page_title("绿电直连规划", "读取V17场景内生的园区绿电覆盖、直连筛查和P2X协同结果。")
@@ -1092,6 +1389,27 @@ def green_direct_page() -> None:
         else:
             relevant = pd.DataFrame()
         render_integrated_result_cards(execution)
+        options = GreenDirectService.from_v17_metrics(execution.metrics)
+        if not options.empty:
+            best = options.loc[options["年度成本/百万元"].idxmin()]
+            section_label("V17绿电直连方案")
+            fig = go.Figure(
+                go.Bar(
+                    x=options["方案"],
+                    y=options["年度成本/百万元"],
+                    marker_color=["#16a34a", "#2563eb", "#9333ea"],
+                    text=options["年度成本/百万元"].round(2),
+                    textposition="outside",
+                )
+            )
+            fig.update_layout(title="绿电直连年度成本")
+            fig.update_yaxes(title="年度成本 / 百万元")
+            st.plotly_chart(plot_layout(fig, height=380), use_container_width=True)
+            st.markdown(
+                f'<div class="best-strip">模型推荐：<b>{best["方案"]}</b>，年度成本约 '
+                f'{float(best["年度成本/百万元"]):.2f} 百万元</div>',
+                unsafe_allow_html=True,
+            )
         section_label("模型内生筛查指标")
         if relevant.empty:
             empty_hint("当前场景未输出专项指标", "可选择S6、S7或S8并启用绿电直连/P2X参数后重新运行。")
@@ -1110,26 +1428,40 @@ def green_direct_page() -> None:
     annual_demand = float(metrics.get("Total electricity demand [MWh]", 0.0)) * annual_scale
     annual_green = float(metrics.get("Total renewable generation [MWh]", 0.0)) * annual_scale
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     target_share = c1.slider("目标绿电占比 / %", 10.0, 100.0, max(60.0, float(metrics.get("Renewable share [%]", 0.0))), 1.0)
     planning_years = c2.number_input("规划周期 / 年", min_value=1, max_value=50, value=int(inputs.get("service_life", 25) or 25), step=1)
     green_lcoe = c3.number_input("园区内绿电成本 / 元-MWh", min_value=1.0, max_value=1500.0, value=360.0, step=10.0)
     vpp_lcoe = c4.number_input("虚拟电厂绿电成本 / 元-MWh", min_value=1.0, max_value=1500.0, value=430.0, step=10.0)
-
-    c5, c6, c7 = st.columns(3)
     base_lcoe = c5.number_input("绿电基地成本 / 元-MWh", min_value=1.0, max_value=1500.0, value=390.0, step=10.0)
-    line_loss = c6.slider("专线损耗率 / %", 0.0, 20.0, 3.5, 0.1)
-    fixed_cost = c7.number_input("直连固定工程费 / 万元", min_value=0.0, max_value=200_000.0, value=1500.0, step=100.0)
+    with st.expander("线路损耗与固定工程费"):
+        c6, c7, c8 = st.columns(3)
+        park_loss = c6.slider("园区内损耗 / %", 0.0, 20.0, 1.5, 0.1)
+        vpp_loss = c7.slider("虚拟电厂聚合损耗 / %", 0.0, 20.0, 2.5, 0.1)
+        base_loss = c8.slider("绿电基地专线损耗 / %", 0.0, 20.0, 3.5, 0.1)
+        c9, c10, c11 = st.columns(3)
+        park_fixed = c9.number_input("园区内固定工程费 / 万元", 0.0, 200_000.0, 600.0, 100.0)
+        vpp_fixed = c10.number_input("虚拟电厂平台费 / 万元", 0.0, 200_000.0, 900.0, 100.0)
+        base_fixed = c11.number_input("绿电基地专线工程费 / 万元", 0.0, 200_000.0, 1800.0, 100.0)
 
-    target_green = annual_demand * target_share / 100
-    green_gap = max(0.0, target_green - annual_green)
-    effective_base_energy = green_gap / max(1 - line_loss / 100, 0.01)
-    costs = {
-        "园区内新增绿电": green_gap * green_lcoe * planning_years / 10_000 + fixed_cost * 0.4,
-        "虚拟电厂聚合绿电": green_gap * vpp_lcoe * planning_years / 10_000 + fixed_cost * 0.15,
-        "绿电基地直连": effective_base_energy * base_lcoe * planning_years / 10_000 + fixed_cost,
-    }
-    best_name = min(costs, key=costs.get)
+    assessment = GreenDirectService().evaluate(
+        GreenDirectRequest(
+            annual_demand_mwh=annual_demand,
+            annual_green_mwh=annual_green,
+            target_share=target_share / 100.0,
+            planning_years=int(planning_years),
+            park_lcoe_cny_per_mwh=green_lcoe,
+            vpp_lcoe_cny_per_mwh=vpp_lcoe,
+            base_lcoe_cny_per_mwh=base_lcoe,
+            park_loss_rate=park_loss / 100.0,
+            vpp_loss_rate=vpp_loss / 100.0,
+            base_loss_rate=base_loss / 100.0,
+            park_fixed_cost_wan_cny=park_fixed,
+            vpp_fixed_cost_wan_cny=vpp_fixed,
+            base_fixed_cost_wan_cny=base_fixed,
+        )
+    )
+    costs = dict(zip(assessment.options["方案"], assessment.options["规划期成本/万元"]))
 
     section_label("当前绿电缺口")
     cols = st.columns(4)
@@ -1138,14 +1470,18 @@ def green_direct_page() -> None:
     with cols[1]:
         metric_card("当前年绿电量", fmt(annual_green), "MWh", "green", "R")
     with cols[2]:
-        metric_card("目标绿电量", fmt(target_green), "MWh", "purple", "T")
+        metric_card("目标绿电量", fmt(assessment.annual_target_green_mwh), "MWh", "purple", "T")
     with cols[3]:
-        metric_card("需补充绿电", fmt(green_gap), "MWh", "orange", "G")
+        metric_card("需补充绿电", fmt(assessment.annual_green_gap_mwh), "MWh", "orange", "G")
 
     section_label("方案成本对比")
     st.plotly_chart(green_cost_figure(costs), use_container_width=True)
-    st.markdown(f'<div class="best-strip">推荐方案：<b>{best_name}</b>，规划期成本约 {costs[best_name]:.1f} 万元</div>', unsafe_allow_html=True)
-    st.dataframe(pd.DataFrame({"方案": list(costs.keys()), "规划期成本/万元": list(costs.values())}), use_container_width=True, hide_index=True)
+    st.markdown(
+        f'<div class="best-strip">推荐方案：<b>{assessment.recommended_mode}</b>，规划期成本约 '
+        f'{assessment.recommended_cost_wan_cny:.1f} 万元</div>',
+        unsafe_allow_html=True,
+    )
+    st.dataframe(assessment.options, use_container_width=True, hide_index=True)
 
 
 def export_page() -> None:
@@ -1236,6 +1572,8 @@ def main() -> None:
         realtime_results_page()
     elif page in {"调度综合指标", "综合规划指标"}:
         indicator_page()
+    elif page == "场景对比":
+        scenario_comparison_page()
     elif page == "绿电直连规划":
         green_direct_page()
     elif page == "结果导出":

@@ -50,6 +50,7 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
         "参数配置与运行",
         "多能流结果",
         "综合规划指标",
+        "场景对比",
         "绿电直连规划",
         "结果导出",
         "工程架构",
@@ -58,3 +59,13 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
         navigation.set_value(page)
         app.run(timeout=60)
         assert not app.exception, f"综合规划页面加载失败：{page}"
+
+    app.radio[0].set_value("场景对比")
+    app.run(timeout=60)
+    compare_button = next(button for button in app.button if button.label == "运行真实场景对比")
+    compare_button.click()
+    app.run(timeout=60)
+    assert not app.exception
+    comparison = app.session_state["scenario_comparison_result"]
+    assert comparison.success is True
+    assert comparison.table["Scenario"].tolist() == [f"S{index}" for index in range(9)]

@@ -43,6 +43,8 @@ FastAPI (api.py)
 
 - `app.py`：只负责用户交互、页面状态和结果展示，不定义优化规则。
 - `src/application`：维护模型目录，按`model_kind`路由快速调度或V17综合能源规划，并返回统一成功/失败结果、元数据、摘要、指标和成果包。
+- `src/application/scenario_comparison_service.py`：逐一调用统一模型服务生成S0—S8真实对比、减排成本和包含各场景原始ZIP的对比成果包。
+- `src/application/green_direct_service.py`：统一快速调度绿电缺口成本计算和V17绿电直连指标读取，页面不再承载成本公式。
 - `src/core`：定义稳定的输入结构、错误码和表格校验规则，不依赖Streamlit。
 - `src/core/integrated_config.py`：定义V17页面配置结构、跨字段依赖校验、版本化载荷和SHA-256参数指纹。
 - `src/storemore_engine.py`：执行源荷生成、容量规划、滚动线性优化、指标计算和结果打包。
