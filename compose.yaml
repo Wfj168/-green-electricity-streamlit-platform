@@ -11,6 +11,8 @@ x-platform-common: &platform-common
     PLATFORM_AUTH_SECRET: ${PLATFORM_AUTH_SECRET:-}
     PLATFORM_BOOTSTRAP_KEY: ${PLATFORM_BOOTSTRAP_KEY:-}
     PLATFORM_TOKEN_TTL_SECONDS: ${PLATFORM_TOKEN_TTL_SECONDS:-28800}
+    PLATFORM_JOB_LEASE_SECONDS: ${PLATFORM_JOB_LEASE_SECONDS:-3600}
+    PLATFORM_LOG_LEVEL: ${PLATFORM_LOG_LEVEL:-INFO}
     GIT_COMMIT: ${GIT_COMMIT:-development}
   volumes:
     - platform-data:/app/var
@@ -32,6 +34,9 @@ services:
   worker:
     <<: *platform-common
     command: ["python", "worker.py", "--poll-seconds", "2"]
+    environment:
+      <<: *platform-environment
+      PLATFORM_WORKER_ID: ${PLATFORM_WORKER_ID:-worker-1}
     depends_on:
       api:
         condition: service_healthy

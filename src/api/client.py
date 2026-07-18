@@ -5,6 +5,8 @@ from typing import Any
 
 import requests
 
+from src.deployment import validate_api_url
+
 
 class ApiClientError(RuntimeError):
     pass
@@ -18,16 +20,24 @@ class PlatformApiClient:
         access_token: str | None = None,
         timeout: float = 10.0,
     ) -> None:
-        self.base_url = (base_url or os.getenv("PLATFORM_API_URL", "")).rstrip("/")
-        self.user_id = user_id or os.getenv("PLATFORM_USER_ID", "local-user")
-        self.access_token = access_token or os.getenv("PLATFORM_ACCESS_TOKEN", "")
+        self.base_url = (base_url if base_url is not None else os.getenv("PLATFORM_API_URL", "")).strip().rstrip("/")
+        self.user_id = (user_id if user_id is not None else os.getenv("PLATFORM_USER_ID", "local-user")).strip()
+        self.access_token = (
+            access_token if access_token is not None else os.getenv("PLATFORM_ACCESS_TOKEN", "")
+        ).strip()
         self.timeout = timeout
+
+    @property
+    def configuration_error(self) -> str | None:
+        return validate_api_url(self.base_url)
 
     @property
     def configured(self) -> bool:
         return bool(self.base_url)
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
+        if self.configuration_error:
+            raise ApiClientError(self.configuration_error)
         if not self.configured:
             raise ApiClientError("尚未配置PLATFORM_API_URL")
         headers = dict(kwargs.pop("headers", {}))
@@ -50,7 +60,10 @@ class PlatformApiClient:
             except ValueError:
                 detail = response.text
             raise ApiClientError(f"后台服务返回{response.status_code}：{detail}")
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ApiClientError("后台服务未返回有效JSON，请检查反向代理和API地址") from exc
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
@@ -66,12 +79,31 @@ class PlatformApiClient:
             "POST", f"/api/v1/projects/{project_id}/scenarios", json={"name": name, "inputs": inputs}
         )
 
-    def create_job(self, project_id: str, scenario_version_id: str) -> dict[str, Any]:
+    def create_job(
+        self,
+        project_id: str,
+        scenario_version_id: str,
+        model_kind: str = "realtime_dispatch",
+        request: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        max_attempts: int = 3,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "scenario_version_id": scenario_version_id,
+            "model_kind": model_kind,
+            "request": request or {},
+            "max_attempts": max_attempts,
+        }
+        if idempotency_key:
+            payload["idempotency_key"] = idempotency_key
         return self._request(
             "POST",
             f"/api/v1/projects/{project_id}/jobs",
-            json={"scenario_version_id": scenario_version_id, "request": {}},
+            json=payload,
         )
+
+    def list_models(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/api/v1/models")
 
     def list_jobs(self, project_id: str | None = None) -> list[dict[str, Any]]:
         params = {"project_id": project_id} if project_id else None

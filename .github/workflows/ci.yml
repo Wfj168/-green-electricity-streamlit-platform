@@ -35,6 +35,9 @@ jobs:
       - name: Check for high-confidence code errors
         run: ruff check .
 
+      - name: Run deployment preflight
+        run: python scripts/deployment_preflight.py --profile all
+
       - name: Run regression suite
         run: pytest
 

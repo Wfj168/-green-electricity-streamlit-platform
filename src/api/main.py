@@ -2,23 +2,62 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import logging
+from time import perf_counter
 import sqlite3
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 
+from src.application import get_model_spec, list_model_specs
 from src.api.schemas import JobCreate, JobTransition, ProjectCreate, ScenarioCreate, TokenRequest
 from src.persistence import Database, PlatformRepository
+from src.observability import configure_json_logging
 from src.security import AuthService, Principal
 from src.security.auth import AuthError
 from src.version import PLATFORM_VERSION, REALTIME_MODEL_VERSION
 
 
 def create_app(database_path: str | Path | None = None) -> FastAPI:
+    configure_json_logging()
+    logger = logging.getLogger("platform.api")
     repository = PlatformRepository(Database(database_path))
     auth_service = AuthService.from_env()
     app = FastAPI(title="园区低碳优化平台 API", version=PLATFORM_VERSION)
     app.state.repository = repository
     app.state.auth_service = auth_service
+
+    @app.middleware("http")
+    async def request_observability(request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID", str(uuid4()))[:128]
+        started = perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "request failed",
+                extra={
+                    "event": "api.request.failed",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "duration_ms": round((perf_counter() - started) * 1000, 3),
+                },
+            )
+            raise
+        response.headers["X-Request-ID"] = request_id
+        logger.info(
+            "request completed",
+            extra={
+                "event": "api.request.completed",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round((perf_counter() - started) * 1000, 3),
+            },
+        )
+        return response
 
     def current_principal(
         authorization: str | None = Header(default=None),
@@ -38,10 +77,43 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         return dependency
 
     @app.get("/health")
-    def health() -> dict[str, str]:
+    def health() -> dict[str, object]:
         with repository.database.connect() as connection:
             connection.execute("SELECT 1").fetchone()
-        return {"status": "ok", "version": PLATFORM_VERSION, "model_version": REALTIME_MODEL_VERSION}
+        return {
+            "status": "ok",
+            "version": PLATFORM_VERSION,
+            "model_version": REALTIME_MODEL_VERSION,
+            "models": list_model_specs(),
+        }
+
+    @app.get("/ready")
+    def ready() -> dict[str, str]:
+        with repository.database.connect() as connection:
+            connection.execute("SELECT 1").fetchone()
+        return {"status": "ready"}
+
+    @app.get("/metrics", response_class=Response)
+    def metrics() -> Response:
+        counts = repository.job_status_counts()
+        lines = [
+            "# HELP platform_jobs Number of optimization jobs by status",
+            "# TYPE platform_jobs gauge",
+        ]
+        lines.extend(f'platform_jobs{{status="{status}"}} {count}' for status, count in sorted(counts.items()))
+        return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+    @app.get("/api/v1/models")
+    def list_models(principal: Principal = Depends(current_principal)):
+        return list_model_specs()
+
+    @app.get("/api/v1/audit")
+    def list_audit(
+        limit: int = Query(default=100, ge=1, le=1000),
+        entity_type: str | None = Query(default=None),
+        principal: Principal = Depends(require_roles("admin")),
+    ):
+        return repository.list_audit_logs(limit=limit, entity_type=entity_type)
 
     @app.post("/api/v1/auth/token")
     def issue_token(payload: TokenRequest):
@@ -90,11 +162,23 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             project = repository.get_project(project_id)
             if project["owner_id"] != principal.user_id:
                 raise HTTPException(status_code=403, detail="无权访问该项目")
+            model_spec = get_model_spec(payload.model_kind)
             model = repository.register_model_version(
-                "storemore", REALTIME_MODEL_VERSION, "scipy-highs", os.getenv("GIT_COMMIT", "development")
+                model_spec.name,
+                model_spec.version,
+                model_spec.engine,
+                os.getenv("GIT_COMMIT", "development"),
             )
+            job_request = dict(payload.request)
+            job_request["model_kind"] = model_spec.kind.value
             job = repository.create_job(
-                project_id, payload.scenario_version_id, model["id"], payload.request, principal.user_id
+                project_id,
+                payload.scenario_version_id,
+                model["id"],
+                job_request,
+                principal.user_id,
+                idempotency_key=payload.idempotency_key,
+                max_attempts=payload.max_attempts,
             )
             repository.append_audit(principal.user_id, "job.queued", "job", job["id"])
             return job
