@@ -15,10 +15,13 @@ from src.application.model_service import (
     list_integrated_scenarios,
     list_model_specs,
 )
+from src.application.model_audit_service import ModelAuditResult, ModelAuditService
 from src.application.scenario_comparison_service import ScenarioComparisonResult, ScenarioComparisonService
 from src.application.simulation_service import SimulationRequest, SimulationService
 
 __all__ = [
+    "CarbonAnalysisResult",
+    "CarbonAnalysisService",
     "GreenDirectRequest",
     "GreenDirectResult",
     "GreenDirectService",
@@ -30,6 +33,8 @@ __all__ = [
     "IntradayRollingService",
     "ModelExecutionRequest",
     "ModelExecutionResult",
+    "ModelAuditResult",
+    "ModelAuditService",
     "ModelKind",
     "ScenarioComparisonResult",
     "ScenarioComparisonService",
@@ -41,3 +46,4 @@ __all__ = [
     "list_integrated_scenarios",
     "list_model_specs",
 ]
+from src.application.carbon_analysis_service import CarbonAnalysisResult, CarbonAnalysisService

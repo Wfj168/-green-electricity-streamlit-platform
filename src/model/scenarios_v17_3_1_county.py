@@ -9,6 +9,19 @@ COMMON_PARAMS = {
     "life_years": 20,
     "fixed_om_rate": 0.02,
     "enable_chp": True,
+    # 2025 演示基准。用于规划筛查，不代替设备询价或可研概算。
+    "assumption_base_year": 2025,
+    "cost_assumption_status": "公开项目与行业基准校准的演示参数，项目交付前需按属地询价更新",
+    "capex_pv": 3200000.0,
+    "capex_wt": 6500000.0,
+    "capex_chp": 5500000.0,
+    "capex_hp": 1200000.0,
+    "capex_ec": 900000.0,
+    "capex_gb": 400000.0,
+    "capex_bat_e": 900000.0,
+    "capex_bat_p": 700000.0,
+    "capex_ts_e": 200000.0,
+    "capex_ts_p": 150000.0,
 
     # Grid interface: local-consumption oriented, with limited export.
     "enable_grid_export": True,
@@ -69,8 +82,8 @@ COMMON_PARAMS = {
     "enable_endogenous_p2x": False,
     "p2x_min_process_heat_substitution_share": 0.0,
     "max_electrolyzer_capacity": 80.0,
-    "capex_electrolyzer": 850000.0,
-    "p2x_variable_om_cost": 4.0,
+    "capex_electrolyzer": 3000000.0,
+    "p2x_variable_om_cost": 30.0,
     "max_p2x_electricity_share_of_renewable_generation": 0.35,
 
     # Adequacy and emissions
@@ -94,8 +107,8 @@ COMMON_PARAMS = {
     "max_annual_unserved_energy_ratio": 0.0001,
 
     # Storage realism
-    "battery_degradation_cost": 14.0,
-    "thermal_storage_degradation_cost": 2.0,
+    "battery_degradation_cost": 120.0,
+    "thermal_storage_degradation_cost": 10.0,
     "max_battery_equivalent_cycles": 350.0,
     "max_thermal_storage_equivalent_cycles": 365.0,
 
@@ -253,7 +266,7 @@ def get_planning_scenarios_v17_3_1() -> dict[str, dict]:
         "S8": {
             **base,
             "name": "S8 投稿导向零碳园区深度脱碳",
-            "description": "面向Applied Energy零碳工业园区专题，进一步强化园区绿电覆盖、碳配额压力、绿电直连、低空韧性，并将Power-to-X/绿氢替代从诊断筛查推进为优化内生决策。",
+            "description": "面向零碳工业园区深度脱碳研究，进一步强化园区绿电覆盖、碳配额压力、绿电直连、低空韧性，并将电转其他能源与绿氢替代从诊断筛查推进为优化内生决策。",
             "enable_carbon_constraint": True,
             "internalize_carbon_price": True,
             "enable_battery": True,
@@ -275,8 +288,8 @@ def get_planning_scenarios_v17_3_1() -> dict[str, dict]:
             "enable_endogenous_p2x": True,
             "p2x_min_process_heat_substitution_share": 0.10,
             "max_electrolyzer_capacity": 70.0,
-            "capex_electrolyzer": 820000.0,
-            "p2x_variable_om_cost": 4.0,
+            "capex_electrolyzer": 2800000.0,
+            "p2x_variable_om_cost": 30.0,
             "max_p2x_electricity_share_of_renewable_generation": 0.32,
             "green_hydrogen_lcoe_cny_per_mwh": 520.0,
         },

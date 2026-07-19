@@ -63,7 +63,7 @@ class PlatformApiClient:
         try:
             return response.json()
         except ValueError as exc:
-            raise ApiClientError("后台服务未返回有效JSON，请检查反向代理和API地址") from exc
+            raise ApiClientError("后台服务未返回有效结构化数据，请检查反向代理和后台地址") from exc
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")

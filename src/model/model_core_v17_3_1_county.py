@@ -224,6 +224,12 @@ def solve_integrated_energy_system_v17_3_1(
 
     enable_carbon_constraint = bool(scenario.get("enable_carbon_constraint", False))
     internalize_carbon_price = bool(scenario.get("internalize_carbon_price", False))
+    carbon_market_price = float(
+        scenario.get(
+            "carbon_market_price_cny_per_tco2",
+            float(profiles["carbon_price"].mean()),
+        )
+    )
     enable_battery = bool(scenario.get("enable_battery", False))
     enable_thermal_storage = bool(scenario.get("enable_thermal_storage", False))
     battery_dispatch_enabled = bool(scenario.get("battery_dispatch_enabled", enable_battery))
@@ -438,16 +444,16 @@ def solve_integrated_energy_system_v17_3_1(
     }
 
     capex = {
-        "C_PV": float(scenario.get("capex_pv", 600000.0)),
-        "C_WT": float(scenario.get("capex_wt", 1100000.0)),
-        "C_CHP": float(scenario.get("capex_chp", 576923.0)),
-        "C_HP": float(scenario.get("capex_hp", 250000.0)),
-        "C_EC": float(scenario.get("capex_ec", 180000.0)),
-        "C_GB": float(scenario.get("capex_gb", 120000.0)),
-        "C_BAT_E": float(scenario.get("capex_bat_e", 250000.0)),
-        "C_BAT_P": float(scenario.get("capex_bat_p", 100000.0)),
-        "C_TS_E": float(scenario.get("capex_ts_e", 50000.0)),
-        "C_TS_P": float(scenario.get("capex_ts_p", 30000.0)),
+        "C_PV": float(scenario.get("capex_pv", 3200000.0)),
+        "C_WT": float(scenario.get("capex_wt", 6500000.0)),
+        "C_CHP": float(scenario.get("capex_chp", 5500000.0)),
+        "C_HP": float(scenario.get("capex_hp", 1200000.0)),
+        "C_EC": float(scenario.get("capex_ec", 900000.0)),
+        "C_GB": float(scenario.get("capex_gb", 400000.0)),
+        "C_BAT_E": float(scenario.get("capex_bat_e", 900000.0)),
+        "C_BAT_P": float(scenario.get("capex_bat_p", 700000.0)),
+        "C_TS_E": float(scenario.get("capex_ts_e", 200000.0)),
+        "C_TS_P": float(scenario.get("capex_ts_p", 150000.0)),
         "C_ELZ": capex_electrolyzer,
     }
     annualized_capital_cost_per_unit = {
@@ -683,18 +689,17 @@ def solve_integrated_energy_system_v17_3_1(
     # Fuel and carbon objective terms.
     for t in range(T):
         gas_price_t = float(profiles["gas_price"].iloc[t])
-        carbon_price_t = float(profiles["carbon_price"].iloc[t])
         objective[v("G_GB", t)] += gas_price_t * dt * weights[t]
         objective[v("G_CHP", t)] += gas_price_t * dt * weights[t]
         if internalize_carbon_price:
             objective[v("P_grid_buy", t)] += (
-                grid_emission_factor * carbon_price_t * dt * weights[t]
+                grid_emission_factor * carbon_market_price * dt * weights[t]
             )
             objective[v("G_GB", t)] += (
-                gas_emission_factor * carbon_price_t * dt * weights[t]
+                gas_emission_factor * carbon_market_price * dt * weights[t]
             )
             objective[v("G_CHP", t)] += (
-                gas_emission_factor * carbon_price_t * dt * weights[t]
+                gas_emission_factor * carbon_market_price * dt * weights[t]
             )
 
     n_var = len(lower_bounds)
@@ -1357,7 +1362,8 @@ def solve_integrated_energy_system_v17_3_1(
     if not result.success or result.x is None:
         return {
             "success": False,
-            "message": str(result.message),
+            "message": f"综合能源规划求解失败（求解状态码：{int(result.status)}）。",
+            "solver_message": str(result.message),
             "solver_status": int(result.status),
         }
 
@@ -1579,7 +1585,7 @@ def solve_integrated_energy_system_v17_3_1(
         ((dispatch["G_CHP"] + dispatch["G_GB"]) * profiles["gas_price"].values * dt * weights).sum()
     )
     annual_carbon_cost = float(
-        (dispatch["co2_emission"] * profiles["carbon_price"].values * weights).sum()
+        (dispatch["co2_emission"] * carbon_market_price * weights).sum()
     )
     annual_dr_cost = float(
         (
@@ -1693,7 +1699,7 @@ def solve_integrated_energy_system_v17_3_1(
                 social_annual_cost,
                 objective_annual_cost,
             ],
-            "Unit": ["EUR/year"] * 20,
+            "Unit": ["CNY/year"] * 20,
         }
     )
 
@@ -1825,7 +1831,8 @@ def solve_integrated_energy_system_v17_3_1(
         if annual_electric_demand > 1e-9 else 0.0
     )
     industrial_park_local_renewable_coverage = (
-        100.0 * annual_renewable_local / annual_industrial_park_electric_load
+        100.0 * min(annual_renewable_local, annual_industrial_park_electric_load)
+        / annual_industrial_park_electric_load
         if annual_industrial_park_electric_load > 1e-9 else 0.0
     )
     carbon_intensity_per_electric_service = (
@@ -2118,8 +2125,8 @@ def solve_integrated_energy_system_v17_3_1(
                 p2x_screening_annual_cost,
             ],
             "Unit": [
-                "EUR/year", "EUR/year", "EUR/year", "EUR/year",
-                "EUR/year", "EUR/year", "tCO2/year",
+                "CNY/year", "CNY/year", "CNY/year", "CNY/year",
+                "CNY/year", "CNY/year", "tCO2/year",
                 "MWh/year", "MWh/year", "%", "%",
                 "MWh/year", "MWh/year", "MWh/year", "%", "%", "%",
                 "%", "%",
@@ -2210,7 +2217,7 @@ def solve_integrated_energy_system_v17_3_1(
 
     return {
         "success": True,
-        "message": "Optimization solved successfully.",
+        "message": "综合能源规划求解成功。",
         "solver_status": int(result.status),
         "capacity": capacity_df,
         "dispatch": dispatch,

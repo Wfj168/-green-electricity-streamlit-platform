@@ -11,6 +11,7 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.shared import Inches, Pt, RGBColor
 
 
@@ -119,7 +120,7 @@ def configure_headers(section) -> None:
     paragraph = footer.paragraphs[0]
     paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     paragraph.paragraph_format.space_before = Pt(0)
-    label = paragraph.add_run("v0.7.0  ·  ")
+    label = paragraph.add_run("v0.8.0  ·  ")
     set_run_font(label, size=8.5, color=MUTED)
     field = OxmlElement("w:fldSimple")
     field.set(qn("w:instr"), "PAGE")
@@ -146,7 +147,7 @@ def add_cover(doc: Document) -> None:
     kicker = doc.add_paragraph()
     kicker.alignment = WD_ALIGN_PARAGRAPH.CENTER
     kicker.paragraph_format.space_after = Pt(16)
-    run = kicker.add_run("PROJECT HANDOVER · RELEASE 0.7.0")
+    run = kicker.add_run("PROJECT HANDOVER · RELEASE 0.8.0")
     set_run_font(run, size=10, bold=True, color=BLUE)
 
     title = doc.add_paragraph()
@@ -174,7 +175,7 @@ def add_cover(doc: Document) -> None:
     set_run_font(run, size=10, color=MUTED)
     meta = doc.add_paragraph()
     meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = meta.add_run("交付分支：upgrade/v0.7.0-productization")
+    run = meta.add_run("交付分支：agent/v17-project-upgrade")
     set_run_font(run, size=10, color=MUTED)
     doc.add_page_break()
 
@@ -204,7 +205,18 @@ def add_contents(doc: Document) -> None:
     doc.add_page_break()
 
 
-INLINE_PATTERN = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*)")
+INLINE_PATTERN = re.compile(r"(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*)")
+
+
+def add_hyperlink(paragraph, text: str, url: str) -> None:
+    relationship_id = paragraph.part.relate_to(url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), relationship_id)
+    run = paragraph.add_run(text)
+    set_run_font(run, color=BLUE)
+    run.font.underline = True
+    hyperlink.append(run._r)
+    paragraph._p.append(hyperlink)
 
 
 def add_inline_runs(paragraph, text: str) -> None:
@@ -214,7 +226,11 @@ def add_inline_runs(paragraph, text: str) -> None:
             run = paragraph.add_run(text[position : match.start()])
             set_run_font(run)
         token = match.group(0)
-        if token.startswith("`"):
+        if token.startswith("["):
+            link = re.fullmatch(r"\[([^\]]+)\]\(([^)]+)\)", token)
+            if link:
+                add_hyperlink(paragraph, link.group(1), link.group(2))
+        elif token.startswith("`"):
             run = paragraph.add_run(token[1:-1])
             run.style = "Code Inline"
         else:
@@ -468,6 +484,48 @@ def add_markdown(doc: Document, path: Path, *, skip_title: bool = True) -> None:
             rows, index = parse_table(lines, index)
             add_table(doc, rows)
             continue
+        if stripped.startswith("```"):
+            flush_paragraph()
+            current_numbering_id = None
+            index += 1
+            while index < len(lines) and not lines[index].strip().startswith("```"):
+                code_paragraph = doc.add_paragraph()
+                code_paragraph.paragraph_format.left_indent = Inches(0.18)
+                code_paragraph.paragraph_format.right_indent = Inches(0.18)
+                code_paragraph.paragraph_format.space_before = Pt(2)
+                code_paragraph.paragraph_format.space_after = Pt(2)
+                code_paragraph.paragraph_format.line_spacing = 1.0
+                properties = code_paragraph._p.get_or_add_pPr()
+                shading = OxmlElement("w:shd")
+                shading.set(qn("w:fill"), "F2F4F7")
+                properties.append(shading)
+                run = code_paragraph.add_run(lines[index])
+                run.style = "Code Inline"
+                index += 1
+            if index < len(lines):
+                index += 1
+            continue
+        if stripped.startswith(">"):
+            flush_paragraph()
+            current_numbering_id = None
+            quote_lines: list[str] = []
+            while index < len(lines) and lines[index].strip().startswith(">"):
+                quote_line = lines[index].strip()[1:].strip()
+                quote_lines.append(quote_line)
+                index += 1
+            quote_text = "\n\n".join(line for line in quote_lines if line)
+            if quote_text:
+                quote = doc.add_paragraph()
+                quote.paragraph_format.left_indent = Inches(0.22)
+                quote.paragraph_format.right_indent = Inches(0.12)
+                quote.paragraph_format.space_before = Pt(4)
+                quote.paragraph_format.space_after = Pt(8)
+                properties = quote._p.get_or_add_pPr()
+                shading = OxmlElement("w:shd")
+                shading.set(qn("w:fill"), "EEF5FB")
+                properties.append(shading)
+                add_inline_runs(quote, quote_text)
+            continue
         heading = re.match(r"^(#{1,4})\s+(.+)$", stripped)
         if heading:
             flush_paragraph()
@@ -527,7 +585,7 @@ def build(output: Path) -> Path:
     add_markdown(doc, PROJECT_ROOT / "docs" / "demo_script.md")
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    doc.core_properties.title = "园区低碳规划与绿电直连优化平台 v0.7.0 项目交接与演示手册"
+    doc.core_properties.title = "园区低碳规划与绿电直连优化平台 v0.8.0 项目交接与演示手册"
     doc.core_properties.subject = "项目交接、算法实现、部署维护与逐页面演示"
     doc.core_properties.author = "项目交付组"
     doc.core_properties.keywords = "园区低碳, 绿电直连, 综合能源, 项目交接, 演示讲稿"
@@ -536,11 +594,11 @@ def build(output: Path) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="生成v0.7.0项目交接与演示Word手册")
+    parser = argparse.ArgumentParser(description="生成v0.8.0项目交接与演示Word手册")
     parser.add_argument(
         "--output",
         type=Path,
-        default=PROJECT_ROOT / "deliverables" / "园区低碳优化平台_v0.7.0_项目交接与演示手册.docx",
+        default=PROJECT_ROOT / "deliverables" / "园区低碳优化平台_v0.8.0_项目交接与演示手册.docx",
     )
     args = parser.parse_args()
     print(build(args.output.resolve()))

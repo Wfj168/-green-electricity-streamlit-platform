@@ -67,34 +67,49 @@ class ScenarioComparisonService:
             executions[key] = execution
             if not execution.success:
                 errors[key] = execution.message
-                rows.append({"Scenario": key, "Success": False, "Message": execution.message})
+                rows.append({"场景": key, "是否成功": False, "说明": execution.message})
                 continue
             metrics = execution.metrics
+            annual_emissions = metrics.get("Annual CO2 emissions")
+            carbon_target = execution.summary.get("carbon_target_tco2_per_year")
+            if carbon_target is None:
+                carbon_constraint_status = "未启用"
+                carbon_margin = None
+            else:
+                carbon_margin = float(carbon_target) - float(annual_emissions or 0.0)
+                tolerance = max(1.0, 0.001 * float(carbon_target))
+                carbon_constraint_status = (
+                    "起作用" if abs(carbon_margin) <= tolerance else "未起作用（结果自然低于上限）"
+                )
             rows.append(
                 {
-                    "Scenario": key,
-                    "Name": execution.summary.get("scenario_name", key),
-                    "Success": True,
-                    "Social annual cost [EUR/year]": metrics.get("Social total annual cost"),
-                    "Annual CO2 [tCO2/year]": metrics.get("Annual CO2 emissions"),
-                    "Annual grid import [MWh/year]": metrics.get("Annual grid import"),
-                    "Renewable curtailment rate [%]": metrics.get("Renewable curtailment rate"),
-                    "Renewable utilization rate [%]": metrics.get(
+                    "场景": key,
+                    "场景名称": execution.summary.get("scenario_name", key),
+                    "是否成功": True,
+                    "社会年度成本/万元": (metrics.get("Social total annual cost") or 0.0) / 10_000.0,
+                    "年度二氧化碳排放/吨": annual_emissions,
+                    "年度碳排目标/吨": carbon_target,
+                    "碳目标余量/吨": carbon_margin,
+                    "碳约束状态": carbon_constraint_status,
+                    "年度电网购电量/兆瓦时": metrics.get("Annual grid import"),
+                    "新能源弃电率/%": metrics.get("Renewable curtailment rate"),
+                    "新能源综合利用率/%": metrics.get(
                         "Renewable utilization rate (including export)"
                     ),
-                    "Multi-energy service rate [%]": metrics.get("Total multi-energy service rate"),
-                    "Battery cycles [cycles/year]": metrics.get("Battery equivalent cycles"),
-                    "Electrolyzer capacity [MW]": metrics.get("Electrolyzer capacity"),
-                    "Green hydrogen [tH2/year]": metrics.get("Endogenous green hydrogen production"),
-                    "Parameter fingerprint": scenario_fingerprint(payload),
-                    "Model version": execution.metadata.get("model_version"),
-                    "Duration [s]": execution.metadata.get("duration_seconds"),
-                    "Message": execution.message,
+                    "多能综合服务保障率/%": metrics.get("Total multi-energy service rate"),
+                    "电池等效循环次数/次每年": metrics.get("Battery equivalent cycles"),
+                    "电解槽规划容量/兆瓦": metrics.get("Electrolyzer capacity"),
+                    "年度绿氢产量/吨": metrics.get("Endogenous green hydrogen production"),
+                    "参数指纹": scenario_fingerprint(payload),
+                    "模型版本": execution.metadata.get("model_version"),
+                    "计算耗时/秒": execution.metadata.get("duration_seconds"),
+                    "说明": execution.message,
                 }
             )
 
         table = pd.DataFrame(rows)
         table = self._add_abatement_metrics(table)
+        table = self._add_distinctness_diagnosis(table)
         metadata = {
             "schema_version": "scenario-comparison-v1",
             "platform_version": PLATFORM_VERSION,
@@ -109,27 +124,60 @@ class ScenarioComparisonService:
 
     @staticmethod
     def _add_abatement_metrics(table: pd.DataFrame) -> pd.DataFrame:
-        if table.empty or "S0" not in set(table.get("Scenario", [])):
+        if table.empty or "S0" not in set(table.get("场景", [])):
             return table
         output = table.copy()
-        baseline = output[(output["Scenario"] == "S0") & (output["Success"])]
+        baseline = output[(output["场景"] == "S0") & (output["是否成功"])]
         if baseline.empty:
             return output
-        baseline_co2 = float(baseline.iloc[0]["Annual CO2 [tCO2/year]"])
-        baseline_cost = float(baseline.iloc[0]["Social annual cost [EUR/year]"])
-        output["CO2 reduction vs S0 [tCO2/year]"] = baseline_co2 - pd.to_numeric(
-            output["Annual CO2 [tCO2/year]"], errors="coerce"
+        baseline_co2 = float(baseline.iloc[0]["年度二氧化碳排放/吨"])
+        baseline_cost = float(baseline.iloc[0]["社会年度成本/万元"])
+        output["相对S0减排量/吨"] = baseline_co2 - pd.to_numeric(
+            output["年度二氧化碳排放/吨"], errors="coerce"
         )
-        output["CO2 reduction vs S0 [%]"] = (
-            output["CO2 reduction vs S0 [tCO2/year]"] / baseline_co2 * 100.0
+        output["相对S0减排率/%"] = (
+            output["相对S0减排量/吨"] / baseline_co2 * 100.0
         )
-        output["Cost change vs S0 [EUR/year]"] = (
-            pd.to_numeric(output["Social annual cost [EUR/year]"], errors="coerce") - baseline_cost
+        output["相对S0成本变化/万元"] = (
+            pd.to_numeric(output["社会年度成本/万元"], errors="coerce") - baseline_cost
         )
-        reductions = output["CO2 reduction vs S0 [tCO2/year]"]
-        output["Average abatement cost [EUR/tCO2]"] = output["Cost change vs S0 [EUR/year]"].where(
-            reductions > 1e-9
-        ) / reductions.where(reductions > 1e-9)
+        reductions = output["相对S0减排量/吨"]
+        output["平均减排成本/元每吨"] = (
+            output["相对S0成本变化/万元"].where(reductions > 1e-9) * 10_000.0
+            / reductions.where(reductions > 1e-9)
+        )
+        return output
+
+    @staticmethod
+    def _add_distinctness_diagnosis(table: pd.DataFrame) -> pd.DataFrame:
+        output = table.copy()
+        output["场景差异状态"] = "有可辨识差异"
+        output["差异说明"] = "核心成本、排放或运行指标与其他场景存在差异。"
+        required = [
+            "社会年度成本/万元",
+            "年度二氧化碳排放/吨",
+            "年度电网购电量/兆瓦时",
+            "新能源弃电率/%",
+            "电池等效循环次数/次每年",
+            "电解槽规划容量/兆瓦",
+        ]
+        if output.empty or not set(required + ["是否成功", "场景"]).issubset(output.columns):
+            return output
+        valid = output[output["是否成功"]].copy()
+        if valid.empty:
+            return output
+        signatures = valid[required].apply(pd.to_numeric, errors="coerce").round(4)
+        for _, indices in signatures.groupby(required, dropna=False).groups.items():
+            positions = list(indices)
+            if len(positions) < 2:
+                continue
+            keys = output.loc[positions, "场景"].astype(str).tolist()
+            key_text = "、".join(keys)
+            output.loc[positions, "场景差异状态"] = "新增约束未改变核心结果"
+            output.loc[positions, "差异说明"] = (
+                f"{key_text}的核心结果一致，说明这些场景之间的新增约束在当前最优解处未起作用；"
+                "不能据此宣称新增约束带来了额外收益。"
+            )
         return output
 
     @staticmethod

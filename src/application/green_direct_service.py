@@ -73,7 +73,7 @@ class GreenDirectService:
         for mode, metric in mapping.items():
             value = metrics.get(metric)
             if value is not None:
-                rows.append({"方案": mode, "年度成本/百万元": float(value)})
+                rows.append({"方案": mode, "年度成本/万元": float(value) * 100.0})
         return pd.DataFrame(rows)
 
     @staticmethod

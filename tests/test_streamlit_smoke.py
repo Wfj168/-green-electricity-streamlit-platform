@@ -9,21 +9,20 @@ def test_all_streamlit_pages_render_without_uncaught_exceptions() -> None:
     assert len(app.radio) == 1
 
     navigation = app.radio[0]
-    assert len(navigation.options) == 9
+    assert navigation.options == ["平台概览", "参数配置与运行", "运行分析", "绿电决策"]
     for page in navigation.options:
         navigation.set_value(page)
         app.run(timeout=30)
         assert not app.exception, f"页面加载失败：{page}"
 
 
-def test_project_page_degrades_safely_for_invalid_api_url(monkeypatch) -> None:
+def test_project_center_is_hidden_for_invalid_api_url(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_API_URL", "not-a-valid-url")
     app = AppTest.from_file("app.py", default_timeout=30).run()
     navigation = app.radio[0]
-    navigation.set_value("项目与任务")
-    app.run(timeout=30)
     assert not app.exception
-    assert any("后台地址配置无效" in value for value in app.markdown.values)
+    assert "项目中心" not in navigation.options
+    assert any("项目中心已隐藏" in value for value in app.caption.values)
 
 
 def test_integrated_planning_configuration_runs_end_to_end() -> None:
@@ -46,22 +45,16 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
     navigation = app.radio[0]
     assert navigation.options == [
         "平台概览",
-        "项目与任务",
         "参数配置与运行",
-        "数据与预测",
-        "多能流结果",
-        "综合规划指标",
-        "场景对比",
-        "绿电直连规划",
-        "结果导出",
-        "工程架构",
+        "运行分析",
+        "场景与决策",
     ]
     for page in navigation.options:
         navigation.set_value(page)
         app.run(timeout=60)
         assert not app.exception, f"综合规划页面加载失败：{page}"
 
-    app.radio[0].set_value("场景对比")
+    app.radio[0].set_value("场景与决策")
     app.run(timeout=60)
     compare_button = next(button for button in app.button if button.label == "运行真实场景对比")
     compare_button.click()
@@ -69,12 +62,12 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
     assert not app.exception
     comparison = app.session_state["scenario_comparison_result"]
     assert comparison.success is True
-    assert comparison.table["Scenario"].tolist() == [f"S{index}" for index in range(9)]
+    assert comparison.table["场景"].tolist() == [f"S{index}" for index in range(9)]
 
 
 def test_data_forecast_and_intraday_page_runs_end_to_end() -> None:
     app = AppTest.from_file("app.py", default_timeout=60).run()
-    app.radio[0].set_value("数据与预测")
+    app.radio[0].set_value("参数配置与运行")
     app.run(timeout=60)
 
     next(button for button in app.button if button.label == "加载14天示例数据并检查").click()

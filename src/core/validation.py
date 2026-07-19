@@ -53,7 +53,7 @@ def validate_simulation_request(
         "Unit Name",
         "Installed Capacity [MW]",
         "Max Investment [MW]",
-        "Capital Investment Cost [M EUR/MW]",
+        "Capital Investment Cost [M CNY/MW]",
         "CO2 Intensity [tCO2/MWh]",
     ]
     if _require_columns("generator_table", generator_df, generator_columns, issues):
@@ -72,7 +72,7 @@ def validate_simulation_request(
         "Max Investment [MWh]",
         "Efficiency [-]",
         "Storage Ratio [-]",
-        "Variable Cost [EUR/MWh]",
+        "Variable Cost [CNY/MWh]",
         "Hourly storage loss as a share of SOC [-]",
     ]
     if _require_columns("storage_table", storage_df, storage_columns, issues):
@@ -96,7 +96,7 @@ def validate_simulation_request(
         _validate_numeric_columns("fuel_table", fuel_df, ["Cost"], issues)
 
     if capex_df is not None:
-        capex_columns = ["Technology", "Annual investment cost [M EUR/year]"]
+        capex_columns = ["Technology", "Annual investment cost [M CNY/year]"]
         if _require_columns("capex_table", capex_df, capex_columns, issues):
             _validate_numeric_columns("capex_table", capex_df, [capex_columns[1]], issues)
 

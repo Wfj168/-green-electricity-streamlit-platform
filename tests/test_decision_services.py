@@ -39,7 +39,7 @@ def test_green_direct_service_extracts_true_v17_metrics() -> None:
             "Remote green-base direct cost": 55.0,
         }
     )
-    assert table.set_index("方案").loc["园区内新增绿电", "年度成本/百万元"] == 48.0
+    assert table.set_index("方案").loc["园区内新增绿电", "年度成本/万元"] == 4800.0
 
 
 def test_s0_to_s8_comparison_is_computed_and_traceable() -> None:
@@ -47,11 +47,15 @@ def test_s0_to_s8_comparison_is_computed_and_traceable() -> None:
     result = ScenarioComparisonService().run(keys, n_steps_per_hour=1, seed=42)
 
     assert result.success is True, result.errors
-    assert result.table["Scenario"].tolist() == keys
-    assert result.table["Success"].all()
-    assert result.table["Parameter fingerprint"].nunique() == 9
-    assert result.table.loc[result.table["Scenario"] == "S0", "CO2 reduction vs S0 [tCO2/year]"].iloc[0] == 0
-    assert result.table.loc[result.table["Scenario"] == "S8", "CO2 reduction vs S0 [tCO2/year]"].iloc[0] > 0
+    assert result.table["场景"].tolist() == keys
+    assert result.table["是否成功"].all()
+    assert result.table["参数指纹"].nunique() == 9
+    assert result.table.loc[result.table["场景"] == "S0", "相对S0减排量/吨"].iloc[0] == 0
+    assert result.table.loc[result.table["场景"] == "S8", "相对S0减排量/吨"].iloc[0] > 0
+    assert "碳约束状态" in result.table
+    assert "场景差异状态" in result.table
+    repeated = result.table[result.table["场景"].isin(["S4", "S5", "S6", "S7"])]
+    assert repeated["场景差异状态"].eq("新增约束未改变核心结果").all()
     with ZipFile(BytesIO(result.artifact_bytes)) as archive:
         assert "scenario_comparison.csv" in archive.namelist()
         assert "comparison_manifest.json" in archive.namelist()

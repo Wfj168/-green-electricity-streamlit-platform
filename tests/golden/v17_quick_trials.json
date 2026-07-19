@@ -1,54 +1,84 @@
 {
-  "model_version": "v17.3.9-adapter-baseline",
+  "model_version": "v17.3.9-cny-calibrated-baseline",
   "seed": 42,
   "n_steps_per_hour": 1,
   "scenarios": {
     "S0": {
       "metrics": {
-        "Social total annual cost": 27433160.32653189,
-        "Annual CO2 emissions": 28352.729529046104,
-        "Annual grid import": 22004.084581206054,
-        "Renewable curtailment rate": 6.071324145166056,
+        "Social total annual cost": 148882435.20214275,
+        "Annual CO2 emissions": 20469.49800053946,
+        "Annual grid import": 17590.4912798846,
+        "Renewable curtailment rate": 10.498194548583315,
+        "Renewable utilization rate (including export)": 89.50180545141669,
         "Total multi-energy service rate": 100.0,
-        "Electrolyzer capacity": 0.0
+        "Battery equivalent cycles": 0.0,
+        "Electrolyzer capacity": 0.0,
+        "Endogenous green hydrogen production": 0.0
       },
       "capacity": {
-        "PV": 36.6044071933133,
-        "WT": 121.10461323730142,
+        "PV": 39.81473348867002,
+        "WT": 134.49751959905055,
+        "CHP": 10.147796671441187,
+        "Heat pump": 60.34366894572484,
+        "Electric chiller": 44.557389627446206,
+        "Gas boiler": 4.964847258139479,
         "Battery energy": 0.0,
+        "Battery power": 0.0,
+        "Thermal storage energy": 0.0,
+        "Thermal storage power": 0.0,
         "Electrolyzer": 0.0
       }
     },
     "S4": {
       "metrics": {
-        "Social total annual cost": 25429995.490774103,
-        "Annual CO2 emissions": 11977.045726699034,
-        "Annual grid import": 5861.1965499535345,
-        "Renewable curtailment rate": 5.608463672484676,
+        "Social total annual cost": 134767413.669347,
+        "Annual CO2 emissions": 5465.502546434541,
+        "Annual grid import": 8898.402670612673,
+        "Renewable curtailment rate": 7.586959188624077,
+        "Renewable utilization rate (including export)": 92.41304081137594,
         "Total multi-energy service rate": 100.0,
-        "Electrolyzer capacity": 0.0
+        "Battery equivalent cycles": 251.85572575134282,
+        "Electrolyzer capacity": 0.0,
+        "Endogenous green hydrogen production": 0.0
       },
       "capacity": {
-        "PV": 36.17273050696928,
-        "WT": 132.32918566019669,
-        "Battery energy": 45.82465778308712,
+        "PV": 36.69220283928703,
+        "WT": 142.4810013113483,
+        "CHP": 0.7139713572265246,
+        "Heat pump": 60.12023419597594,
+        "Electric chiller": 44.557389627446206,
+        "Gas boiler": 11.6580025304565,
+        "Battery energy": 68.49328336822498,
+        "Battery power": 15.275713124186808,
+        "Thermal storage energy": 125.3268541614626,
+        "Thermal storage power": 26.43739648886147,
         "Electrolyzer": 0.0
       }
     },
     "S8": {
       "metrics": {
-        "Social total annual cost": 25521377.622720357,
-        "Annual CO2 emissions": 10501.103017955544,
-        "Annual grid import": 3979.5168526095267,
-        "Renewable curtailment rate": 4.365394453745721,
+        "Social total annual cost": 135740655.09492096,
+        "Annual CO2 emissions": 5326.423100650169,
+        "Annual grid import": 9158.96405607408,
+        "Renewable curtailment rate": 5.725199578763343,
+        "Renewable utilization rate (including export)": 94.27480042123666,
         "Total multi-energy service rate": 100.0,
-        "Electrolyzer capacity": 3.085461447217954
+        "Battery equivalent cycles": 248.7954827338553,
+        "Electrolyzer capacity": 2.9621112808007495,
+        "Endogenous green hydrogen production": 282.6935182129961
       },
       "capacity": {
-        "PV": 36.231814125845645,
-        "WT": 134.4759905325075,
-        "Battery energy": 44.69347929888756,
-        "Electrolyzer": 3.085461447217954
+        "PV": 36.20231117413337,
+        "WT": 143.13042688243337,
+        "CHP": 0.3611121186479766,
+        "Heat pump": 58.358662576633236,
+        "Electric chiller": 44.557389627446206,
+        "Gas boiler": 13.873250313685915,
+        "Battery energy": 70.33849135789548,
+        "Battery power": 15.203792656616073,
+        "Thermal storage energy": 125.90649467245593,
+        "Thermal storage power": 27.00887388170371,
+        "Electrolyzer": 2.9621112808007495
       }
     }
   }

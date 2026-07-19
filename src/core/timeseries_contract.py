@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import timedelta
 from typing import Any
 
 import numpy as np
@@ -47,7 +48,7 @@ class TimeSeriesValidationResult:
 
 
 class FifteenMinuteDataContract:
-    frequency = pd.Timedelta(minutes=15)
+    frequency = timedelta(minutes=15)
 
     def validate(self, source: pd.DataFrame) -> TimeSeriesValidationResult:
         data = source.copy()
