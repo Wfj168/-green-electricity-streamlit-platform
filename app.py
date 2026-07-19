@@ -37,6 +37,20 @@ from src.core import (
     scenario_fingerprint,
 )
 from src.core.schemas import StoreMoreInputs
+from src.dashboard_charts import (
+    SCENARIO_WEIGHTS,
+    annualized_dispatch_value,
+    capacity_utilization_figure,
+    cost_waterfall_figure,
+    dispatch_heatmap_figure,
+    duration_curve_figure,
+    energy_flow_sankey_figure,
+    performance_radar_figure,
+    scenario_incremental_figure,
+    scenario_parallel_coordinates_figure,
+    scenario_score_heatmap_figure,
+    scenario_score_table,
+)
 from src.presentation import localize_v17_table
 from src.storemore_engine import (
     csv_template,
@@ -47,8 +61,10 @@ from src.storemore_engine import (
 )
 from src.ui_components import (
     badge,
+    dashboard_kpi,
     empty_hint,
     inject_global_css,
+    insight_card,
     metric_card,
     page_title,
     pills,
@@ -95,7 +111,7 @@ def init_state() -> None:
         "storage_table": default_storage_table(),
         "fuel_table": default_fuel_table(),
         "capex_table": default_capex_table(),
-        "model_kind": ModelKind.REALTIME_DISPATCH.value,
+        "model_kind": ModelKind.INTEGRATED_PLANNING.value,
         "integrated_result": None,
         "integrated_payload": None,
         "scenario_comparison_result": None,
@@ -120,8 +136,8 @@ def integrated_result() -> ModelExecutionResult | None:
 
 
 def current_model_kind() -> str:
-    value = str(st.session_state.get("model_kind", ModelKind.REALTIME_DISPATCH.value))
-    return value if value in MODEL_LABELS else ModelKind.REALTIME_DISPATCH.value
+    value = str(st.session_state.get("model_kind", ModelKind.INTEGRATED_PLANNING.value))
+    return value if value in MODEL_LABELS else ModelKind.INTEGRATED_PLANNING.value
 
 
 def scenario_comparison_result() -> ScenarioComparisonResult | None:
@@ -911,7 +927,193 @@ def sidebar() -> str:
     return selected
 
 
+def integrated_overview_page() -> None:
+    execution = integrated_result()
+    scenario_name = (
+        str(execution.summary.get("scenario_name", execution.summary.get("scenario_key", "当前场景")))
+        if execution is not None
+        else "等待首次规划计算"
+    )
+    status_text = "规划结果已加载，可进入运行分析与场景决策" if execution is not None else "尚未运行，请先配置并求解V17场景"
+    st.markdown(
+        f"""
+        <div class="cockpit-hero">
+          <div class="cockpit-eyebrow">V17 · 综合能源规划驾驶舱</div>
+          <div class="cockpit-title">园区新型电力与多能系统全景呈现</div>
+          <div class="cockpit-subtitle">当前场景：{scenario_name}　｜　电、热、冷、气、储能、柔性负荷、碳与绿电协同规划</div>
+          <div class="cockpit-status">{status_text}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if execution is None:
+        empty_hint(
+            "驾驶舱等待真实计算结果",
+            "进入“参数配置与运行”，选择S0—S8场景并点击开始综合能源规划。完成后，本页会自动生成容量、电量、成本、碳排、能流和风险画像。",
+        )
+        section_label("V17全景能力")
+        columns = st.columns(4)
+        cards = [
+            ("容量规划", "联合选择光伏、风电、热电联产、热泵、制冷、锅炉、电储能、蓄热和电解槽容量。"),
+            ("多能运行", "用六类典型日解释电、热、冷的逐时平衡、储能循环和柔性负荷转移。"),
+            ("低碳核算", "对账购电、热电联产和燃气排放，比较S0基准、年度目标和当前结果。"),
+            ("场景决策", "按经济、低碳、消纳、电网友好和保供偏好比较S0—S8真实求解结果。"),
+        ]
+        for column, (title, body) in zip(columns, cards):
+            with column:
+                insight_card(title, body)
+        return
+
+    tables = execution.tables or {}
+    metrics = execution.metrics
+    dispatch = tables.get("dispatch", pd.DataFrame())
+    capacity = tables.get("capacity", pd.DataFrame())
+    localized_cost = localize_v17_table("cost", tables.get("cost", pd.DataFrame()))
+    scenario_key = str(execution.summary.get("scenario_key", "S4"))
+    scenario = get_integrated_scenario(scenario_key)
+    payload = st.session_state.get("integrated_payload")
+    if isinstance(payload, dict):
+        scenario.update(payload.get("overrides", {}))
+    audit = ModelAuditService().analyze(metrics=metrics, tables=tables, scenario=scenario)
+
+    kpis = st.columns(6)
+    with kpis[0]:
+        dashboard_kpi(
+            "社会年度总成本",
+            fmt(float(metrics.get("Social total annual cost", 0) or 0) / 10_000.0),
+            "万元/年",
+            "含碳外部成本",
+            "#7c3aed",
+        )
+    with kpis[1]:
+        dashboard_kpi(
+            "年度二氧化碳排放",
+            fmt(metrics.get("Annual CO2 emissions", 0)),
+            "吨/年",
+            "运营边界核算",
+            "#f97316",
+        )
+    with kpis[2]:
+        dashboard_kpi(
+            "本地绿电覆盖",
+            fmt(metrics.get("Renewable local share of electric-service demand", 0)),
+            "%",
+            "电力服务需求口径",
+            "#16a34a",
+        )
+    with kpis[3]:
+        dashboard_kpi(
+            "新能源利用率",
+            fmt(metrics.get("Renewable utilization rate (including export)", 0)),
+            "%",
+            "含本地消纳与外送",
+            "#06b6d4",
+        )
+    with kpis[4]:
+        dashboard_kpi(
+            "多能服务保障率",
+            fmt(metrics.get("Total multi-energy service rate", 0)),
+            "%",
+            "电热冷综合",
+            "#2563eb",
+        )
+    with kpis[5]:
+        dashboard_kpi(
+            "外购电占比",
+            fmt(metrics.get("Grid import share of electric-service demand", 0)),
+            "%",
+            "越低表示园区越自给",
+            "#f59e0b",
+        )
+
+    section_label("全景运行态势")
+    left, center, right = st.columns([0.9, 1.8, 0.9])
+    with left:
+        st.markdown(
+            f"""
+            <div class="overview-panel">
+              <div class="overview-title">园区规划画像</div>
+              <div class="overview-text">
+                <b>{scenario_name}</b><br>
+                以六类典型日代表全年365天，联合优化设备容量与逐时运行。当前展示的是模型真实求解结果，
+                不是预制大屏数字；修改场景参数后需要重新运行。
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with center:
+        st.plotly_chart(plot_layout(energy_flow_sankey_figure(dispatch), height=470), use_container_width=True)
+    with right:
+        target = execution.summary.get("carbon_target_tco2_per_year")
+        actual = float(metrics.get("Annual CO2 emissions", 0) or 0)
+        target_text = (
+            f"目标{float(target):,.0f}吨，当前{actual:,.0f}吨，{'已达标' if actual <= float(target) else '尚有差距'}。"
+            if target is not None
+            else "当前场景未启用年度碳排上限，仍展示碳成本与排放来源。"
+        )
+        binding_count = (
+            int(capacity["Upper bound binding"].fillna(False).astype(bool).sum())
+            if "Upper bound binding" in capacity
+            else 0
+        )
+        insight_card("求解与版本", f"求解状态：{execution.summary.get('solver_status', '-')}；模型版本：{execution.metadata.get('model_version', '-')}。", "#2563eb")
+        insight_card("碳目标执行", target_text, "#16a34a" if target is None or actual <= float(target) else "#ef4444")
+        insight_card("规划边界占用", f"{binding_count}项设备容量达到规划上限；达到上限时应扩边界后复算。", "#f59e0b")
+        insight_card("可信度审计", f"总体结论：{audit.overall_status}；必须复核{audit.review_count}项，提示{audit.notice_count}项。", "#7c3aed")
+
+    section_label("目标达成、建设规模与年度电量")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(plot_layout(performance_radar_figure(metrics), height=430), use_container_width=True)
+    with c2:
+        st.plotly_chart(plot_layout(capacity_utilization_figure(capacity), height=430), use_container_width=True)
+    c3, c4 = st.columns(2)
+    with c3:
+        st.plotly_chart(integrated_energy_summary_figure(metrics), use_container_width=True)
+    with c4:
+        st.plotly_chart(plot_layout(cost_waterfall_figure(localized_cost), height=470), use_container_width=True)
+
+    with st.expander("两种模型怎么选", expanded=False):
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "比较维度": "适用问题",
+                        "快速电力滚动调度": "未来数小时至数天如何安排发电、储能和购售电",
+                        "V17综合能源规划": "未来年度应建设什么设备、建多大，并怎样运行",
+                    },
+                    {
+                        "比较维度": "能源范围",
+                        "快速电力滚动调度": "以电力系统为主",
+                        "V17综合能源规划": "电、热、冷、气、储能、柔性负荷、碳、绿电与绿氢",
+                    },
+                    {
+                        "比较维度": "核心决策",
+                        "快速电力滚动调度": "逐时出力、充放电、购售电",
+                        "V17综合能源规划": "设备容量投资与典型日逐时运行联合优化",
+                    },
+                    {
+                        "比较维度": "主要输出",
+                        "快速电力滚动调度": "短期成本、绿电占比、碳排与滚动日志",
+                        "V17综合能源规划": "容量、年度成本、多能流、碳目标、可靠性、S0—S8决策",
+                    },
+                    {
+                        "比较维度": "推荐使用",
+                        "快速电力滚动调度": "运营值班、日内控制和快速演示",
+                        "V17综合能源规划": "园区方案筛选、年度规划、投资前技术比较",
+                    },
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 def overview_page() -> None:
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+        integrated_overview_page()
+        return
     page_title("园区低碳规划与绿电直连优化平台", "面向园区综合能源系统的参数建模、实时优化、指标分析与绿电直连决策支持。")
     badge(MODEL_LABELS[current_model_kind()])
     st.markdown(
@@ -1621,49 +1823,49 @@ def integrated_analysis_page() -> None:
 
     first_row = st.columns(4)
     with first_row[0]:
-        metric_card(
+        dashboard_kpi(
             "社会年度总成本",
             fmt(float(metrics.get("Social total annual cost", 0) or 0) / 10_000.0),
             "万元/年",
-            "purple",
-            "¥",
+            "项目私有成本加碳外部成本",
+            "#7c3aed",
         )
     with first_row[1]:
-        metric_card("年度二氧化碳排放", fmt(metrics.get("Annual CO2 emissions", 0)), "吨/年", "orange", "C")
+        dashboard_kpi("年度二氧化碳排放", fmt(metrics.get("Annual CO2 emissions", 0)), "吨/年", "运营边界核算", "#f97316")
     with first_row[2]:
-        metric_card(
+        dashboard_kpi(
             "本地绿电覆盖率",
             fmt(metrics.get("Renewable local share of electric-service demand", 0)),
             "%",
-            "green",
-            "R",
+            "本地新能源满足电力服务的比例",
+            "#16a34a",
         )
     with first_row[3]:
-        metric_card(
+        dashboard_kpi(
             "新能源综合利用率",
             fmt(metrics.get("Renewable utilization rate (including export)", 0)),
             "%",
-            "green",
-            "U",
+            "包含本地消纳与外送",
+            "#06b6d4",
         )
 
     second_row = st.columns(4)
     with second_row[0]:
-        metric_card("多能服务保障率", fmt(metrics.get("Total multi-energy service rate", 0)), "%", "blue", "S")
+        dashboard_kpi("多能服务保障率", fmt(metrics.get("Total multi-energy service rate", 0)), "%", "电热冷综合", "#2563eb")
     with second_row[1]:
-        metric_card(
+        dashboard_kpi(
             "外购电占比",
             fmt(metrics.get("Grid import share of electric-service demand", 0)),
             "%",
-            "blue",
-            "G",
+            "反映园区电力自给能力",
+            "#f59e0b",
         )
     with second_row[2]:
         carbon_intensity = float(metrics.get("System carbon intensity per electric-service demand", 0) or 0)
-        metric_card("电力服务碳强度", fmt(carbon_intensity * 1000.0), "千克/兆瓦时", "orange", "I")
+        dashboard_kpi("电力服务碳强度", fmt(carbon_intensity * 1000.0), "千克/兆瓦时", "用电服务口径", "#ef4444")
     with second_row[3]:
         solver_status = execution.summary.get("solver_status", "-")
-        metric_card("求解状态", str(solver_status), "", "purple", "✓")
+        dashboard_kpi("求解状态", str(solver_status), "", "当前结果已完成一致性检查", "#0f766e")
 
     dashboard_tab, operation_tab, economy_tab, carbon_tab, reliability_tab, detail_tab = st.tabs(
         ["综合看板", "多能运行", "经济性", "低碳分析", "可靠性与约束", "数据明细"]
@@ -1673,12 +1875,23 @@ def integrated_analysis_page() -> None:
         c1, c2 = st.columns(2)
         with c1:
             st.plotly_chart(
-                integrated_capacity_figure(tables.get("capacity", pd.DataFrame())),
+                plot_layout(capacity_utilization_figure(tables.get("capacity", pd.DataFrame())), height=430),
                 use_container_width=True,
             )
         with c2:
             st.plotly_chart(integrated_energy_summary_figure(metrics), use_container_width=True)
-        section_label("成本对账")
+        st.plotly_chart(
+            plot_layout(energy_flow_sankey_figure(tables.get("dispatch", pd.DataFrame())), height=470),
+            use_container_width=True,
+        )
+        st.plotly_chart(
+            plot_layout(
+                cost_waterfall_figure(localize_v17_table("cost", tables.get("cost", pd.DataFrame()))),
+                height=470,
+            ),
+            use_container_width=True,
+        )
+        section_label("成本闭环对账")
         st.dataframe(integrated_cost_reconciliation(execution), use_container_width=True, hide_index=True)
 
     with operation_tab:
@@ -1686,6 +1899,14 @@ def integrated_analysis_page() -> None:
         if dispatch.empty or "day_id" not in dispatch:
             empty_hint("暂无多能调度数据", "重新运行V17模型后查看典型日多能流。")
         else:
+            overview_left, overview_right = st.columns(2)
+            with overview_left:
+                st.plotly_chart(
+                    plot_layout(dispatch_heatmap_figure(dispatch, "P_grid_net"), height=400),
+                    use_container_width=True,
+                )
+            with overview_right:
+                st.plotly_chart(plot_layout(duration_curve_figure(dispatch), height=400), use_container_width=True)
             day_ids = dispatch["day_id"].drop_duplicates().tolist()
             day_labels = {}
             for day_id in day_ids:
@@ -1714,7 +1935,35 @@ def integrated_analysis_page() -> None:
                 )
 
     with economy_tab:
-        st.plotly_chart(integrated_cost_figure(tables.get("cost", pd.DataFrame())), use_container_width=True)
+        dispatch = tables.get("dispatch", pd.DataFrame())
+        annual_electric_demand = annualized_dispatch_value(dispatch, "electric_load_adjusted")
+        social_cost = float(metrics.get("Social total annual cost", 0) or 0)
+        capital_cost = float(metrics.get("Annualized capital cost", 0) or 0)
+        fixed_cost = float(metrics.get("Fixed O&M cost", 0) or 0)
+        variable_cost = float(metrics.get("Variable operating annual cost", 0) or 0)
+        carbon_cost = float(metrics.get("Carbon external cost", 0) or 0)
+        economy_cards = st.columns(5)
+        with economy_cards[0]:
+            dashboard_kpi("单位电力服务成本", fmt(social_cost / max(annual_electric_demand, 1e-9)), "元/兆瓦时", "社会年度成本口径", "#7c3aed")
+        with economy_cards[1]:
+            dashboard_kpi("年化投资占比", fmt(100.0 * capital_cost / max(social_cost, 1e-9)), "%", "反映重资产程度", "#2563eb")
+        with economy_cards[2]:
+            dashboard_kpi("固定运维占比", fmt(100.0 * fixed_cost / max(social_cost, 1e-9)), "%", "年度固定支出", "#06b6d4")
+        with economy_cards[3]:
+            dashboard_kpi("可变运行占比", fmt(100.0 * variable_cost / max(social_cost, 1e-9)), "%", "燃料、购售电与灵活性成本", "#f59e0b")
+        with economy_cards[4]:
+            dashboard_kpi("碳成本占比", fmt(100.0 * carbon_cost / max(social_cost, 1e-9)), "%", "当前碳价下的外部成本", "#ef4444")
+        cost_left, cost_right = st.columns([1.25, 1])
+        with cost_left:
+            st.plotly_chart(
+                plot_layout(
+                    cost_waterfall_figure(localize_v17_table("cost", tables.get("cost", pd.DataFrame()))),
+                    height=500,
+                ),
+                use_container_width=True,
+            )
+        with cost_right:
+            st.plotly_chart(integrated_cost_figure(tables.get("cost", pd.DataFrame())), use_container_width=True)
         st.dataframe(
             localize_v17_table("cost", tables.get("cost", pd.DataFrame())),
             use_container_width=True,
@@ -1788,6 +2037,11 @@ def integrated_analysis_page() -> None:
                 ),
                 use_container_width=True,
             )
+
+        st.plotly_chart(
+            plot_layout(dispatch_heatmap_figure(tables.get("dispatch", pd.DataFrame()), "co2_emission_rate"), height=400),
+            use_container_width=True,
+        )
 
         if carbon_analysis.baseline_emissions_tco2 is None:
             st.info("运行“场景与决策”中的S0基准场景对比后，可显示相对基准减排量、减排率和平均减排成本。")
@@ -2097,20 +2351,113 @@ def scenario_comparison_page(*, embedded: bool = False) -> None:
     if valid.empty:
         st.error("本次比较没有成功场景，请查看错误信息。")
     else:
+        preference = st.selectbox(
+            "决策偏好",
+            options=list(SCENARIO_WEIGHTS),
+            index=0,
+            help="平台只改变多指标排序权重，不会重新求解或修改任何场景原始结果。",
+        )
+        scored = scenario_score_table(table, preference)
+        recommended = scored.iloc[0]
         cheapest = valid.loc[valid["社会年度成本/万元"].idxmin()]
         lowest_carbon = valid.loc[valid["年度二氧化碳排放/吨"].idxmin()]
-        highest_reduction = valid.loc[valid["相对S0减排率/%"].idxmax()]
+        reduction_column = "相对S0减排率/%"
+        highest_reduction = (
+            valid.loc[valid[reduction_column].idxmax()]
+            if reduction_column in valid.columns
+            else lowest_carbon
+        )
         cols = st.columns(4)
         with cols[0]:
-            metric_card("已完成场景", str(len(valid)), "个", "blue", "N")
+            dashboard_kpi("已完成场景", str(len(valid)), "个", "全部来自V17逐场景求解", "#2563eb")
         with cols[1]:
-            metric_card("最低成本场景", str(cheapest["场景"]), "", "green", "¥")
+            dashboard_kpi("当前偏好推荐", str(recommended["场景"]), "", f"{preference}，相对得分{float(recommended['相对综合得分']):.1f}", "#7c3aed")
         with cols[2]:
-            metric_card("最低碳场景", str(lowest_carbon["场景"]), "", "orange", "C")
+            dashboard_kpi("最低成本场景", str(cheapest["场景"]), "", f"{float(cheapest['社会年度成本/万元']):,.0f}万元/年", "#16a34a")
         with cols[3]:
-            metric_card("最大减排场景", str(highest_reduction["场景"]), "", "purple", "R")
-        st.plotly_chart(scenario_cost_carbon_figure(table), use_container_width=True)
-        st.plotly_chart(abatement_frontier_figure(table), use_container_width=True)
+            dashboard_kpi("最低碳场景", str(lowest_carbon["场景"]), "", f"{float(lowest_carbon['年度二氧化碳排放/吨']):,.0f}吨/年", "#f97316")
+
+        st.plotly_chart(
+            plot_layout(scenario_score_heatmap_figure(scored), height=430),
+            use_container_width=True,
+        )
+        st.plotly_chart(
+            plot_layout(scenario_parallel_coordinates_figure(scored), height=440),
+            use_container_width=True,
+        )
+
+        section_label("决策排序与取舍")
+        decision_columns = [
+            "相对排名",
+            "场景",
+            "场景名称",
+            "相对综合得分",
+            "社会年度成本/万元",
+            "年度二氧化碳排放/吨",
+            "相对S0减排率/%",
+            "新能源综合利用率/%",
+            "年度电网购电量/兆瓦时",
+            "多能综合服务保障率/%",
+            "碳约束状态",
+        ]
+        st.dataframe(scored[[column for column in decision_columns if column in scored]], use_container_width=True, hide_index=True)
+        cost_premium = float(recommended["社会年度成本/万元"] - cheapest["社会年度成本/万元"])
+        emission_gain = float(cheapest["年度二氧化碳排放/吨"] - recommended["年度二氧化碳排放/吨"])
+        st.info(
+            f"在“{preference}”偏好下推荐{recommended['场景']}：相对最低成本方案，年度成本变化{cost_premium:+,.1f}万元，"
+            f"年度排放变化{-emission_gain:+,.1f}吨。相对综合得分只用于本批场景内部排序，不代表绝对可研评分。"
+        )
+        if str(cheapest["场景"]) != str(lowest_carbon["场景"]):
+            st.warning(
+                f"最低成本为{cheapest['场景']}，最低碳为{lowest_carbon['场景']}，两者不是同一方案。"
+                "最终选择必须同时结合预算、碳目标、可靠性和工程实施条件。"
+            )
+        with st.expander("查看当前决策权重与评分方法"):
+            weights = SCENARIO_WEIGHTS[preference]
+            st.dataframe(
+                pd.DataFrame(
+                    {"评价维度": list(weights), "权重/%": [100.0 * value for value in weights.values()]}
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption("各指标先在当前成功场景中进行0—100相对归一化，再按所选偏好加权；场景集合变化时得分也会变化。")
+
+        section_label("成本、排放与边际变化")
+        chart_left, chart_right = st.columns(2)
+        with chart_left:
+            st.plotly_chart(scenario_cost_carbon_figure(table), use_container_width=True)
+        with chart_right:
+            st.plotly_chart(abatement_frontier_figure(table), use_container_width=True)
+        st.plotly_chart(
+            plot_layout(scenario_incremental_figure(table), height=410),
+            use_container_width=True,
+        )
+
+        recommended_key = str(recommended["场景"])
+        recommended_execution = comparison.executions.get(recommended_key)
+        if recommended_execution is not None and recommended_execution.success:
+            section_label(f"推荐场景{recommended_key}的技术配置")
+            recommended_tables = recommended_execution.tables or {}
+            strategy_left, strategy_right = st.columns([1.2, 1])
+            with strategy_left:
+                st.plotly_chart(
+                    plot_layout(
+                        capacity_utilization_figure(recommended_tables.get("capacity", pd.DataFrame())),
+                        height=430,
+                    ),
+                    use_container_width=True,
+                )
+            with strategy_right:
+                reduction_text = (
+                    f"相对S0减排率{float(highest_reduction[reduction_column]):.1f}%"
+                    if reduction_column in highest_reduction.index
+                    else f"年度排放{float(highest_reduction['年度二氧化碳排放/吨']):,.0f}吨"
+                )
+                insight_card("最大减排场景", f"{highest_reduction['场景']}，{reduction_text}。", "#16a34a")
+                insight_card("储能使用强度", f"电池等效循环{float(recommended.get('电池等效循环次数/次每年', 0) or 0):.1f}次/年。", "#7c3aed")
+                insight_card("电转其他能源", f"电解槽容量{float(recommended.get('电解槽规划容量/兆瓦', 0) or 0):.2f}兆瓦，绿氢{float(recommended.get('年度绿氢产量/吨', 0) or 0):.1f}吨/年。", "#06b6d4")
+                insight_card("碳约束状态", str(recommended.get("碳约束状态", "未启用")), "#f59e0b")
 
     section_label("场景指标明细")
     st.dataframe(table, use_container_width=True, hide_index=True)
@@ -2167,31 +2514,93 @@ def green_direct_page(*, embedded: bool = False) -> None:
         render_integrated_result_cards(execution)
         options = GreenDirectService.from_v17_metrics(execution.metrics)
         if not options.empty:
+            scenario_key = str(execution.summary.get("scenario_key", "S7"))
+            scenario = get_integrated_scenario(scenario_key)
+            payload = st.session_state.get("integrated_payload")
+            if isinstance(payload, dict):
+                scenario.update(payload.get("overrides", {}))
+            assumptions = pd.DataFrame(
+                [
+                    {
+                        "方案": "园区内新增绿电",
+                        "单位绿电成本/元每兆瓦时": scenario.get("park_internal_green_lcoe_cny_per_mwh", 0),
+                        "线路或聚合损耗/%": 100.0 * float(scenario.get("park_internal_line_loss_rate", 0) or 0),
+                        "固定工程投资/万元": 100.0 * float(scenario.get("park_internal_fixed_cost_million_cny", 0) or 0),
+                    },
+                    {
+                        "方案": "虚拟电厂聚合绿电",
+                        "单位绿电成本/元每兆瓦时": scenario.get("vpp_aggregated_green_lcoe_cny_per_mwh", 0),
+                        "线路或聚合损耗/%": 100.0 * float(scenario.get("vpp_aggregation_loss_rate", 0) or 0),
+                        "固定工程投资/万元": 100.0 * float(scenario.get("vpp_platform_fixed_cost_million_cny", 0) or 0),
+                    },
+                    {
+                        "方案": "绿电基地直连",
+                        "单位绿电成本/元每兆瓦时": scenario.get("green_base_lcoe_cny_per_mwh", 0),
+                        "线路或聚合损耗/%": 100.0 * float(scenario.get("green_base_transmission_loss_rate", 0) or 0),
+                        "固定工程投资/万元": 100.0 * float(scenario.get("green_base_line_fixed_cost_million_cny", 0) or 0),
+                    },
+                ]
+            )
+            options = options.merge(assumptions, on="方案", how="left")
             best = options.loc[options["年度成本/万元"].idxmin()]
             section_label("V17绿电直连方案")
-            fig = go.Figure(
+            cards = st.columns(4)
+            with cards[0]:
+                dashboard_kpi("年度直连目标电量", fmt(execution.metrics.get("Green-direct target electricity", 0)), "兆瓦时/年", "产业园电力需求口径", "#16a34a")
+            with cards[1]:
+                dashboard_kpi("直连目标占比", fmt(100.0 * float(scenario.get("green_direct_target_share", 0) or 0)), "%", "来自当前V17场景参数", "#06b6d4")
+            with cards[2]:
+                dashboard_kpi("推荐方案年度成本", fmt(best["年度成本/万元"]), "万元/年", str(best["方案"]), "#7c3aed")
+            with cards[3]:
+                dashboard_kpi("相对最贵方案节省", fmt(execution.metrics.get("Green-direct saving vs worst option", 0)), "%", "同一目标和规划期口径", "#f59e0b")
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            fig.add_trace(
                 go.Bar(
                     x=options["方案"],
                     y=options["年度成本/万元"],
                     marker_color=["#16a34a", "#2563eb", "#9333ea"],
                     text=options["年度成本/万元"].round(2),
                     textposition="outside",
-                )
+                    name="年度成本",
+                ),
+                secondary_y=False,
             )
-            fig.update_layout(title="绿电直连年度成本")
-            fig.update_yaxes(title="年度成本 / 万元（人民币）")
+            fig.add_trace(
+                go.Scatter(
+                    x=options["方案"],
+                    y=options["线路或聚合损耗/%"],
+                    mode="lines+markers",
+                    line=dict(color="#f97316", width=3),
+                    name="线路或聚合损耗",
+                ),
+                secondary_y=True,
+            )
+            fig.update_layout(title="三类绿电补充方案的成本与损耗")
+            fig.update_yaxes(title_text="年度成本 / 万元（人民币）", secondary_y=False)
+            fig.update_yaxes(title_text="线路或聚合损耗 / %", secondary_y=True)
             st.plotly_chart(plot_layout(fig, height=380), use_container_width=True)
             st.markdown(
                 f'<div class="best-strip">模型推荐：<b>{best["方案"]}</b>，年度成本约 '
                 f'{float(best["年度成本/万元"]):.2f} 万元（人民币）</div>',
                 unsafe_allow_html=True,
             )
+            st.dataframe(options, use_container_width=True, hide_index=True)
+            st.caption("方案成本包含目标电量、单位绿电成本、线路或聚合损耗与固定工程投资的年化影响；不包含接网批复、土地、融资、税费和交易合同完整条款。")
         section_label("模型内生筛查指标")
         if relevant.empty:
             empty_hint("当前场景未输出专项指标", "可选择S6、S7或S8并启用绿电直连或电转其他能源参数后重新运行。")
         else:
             st.dataframe(relevant, use_container_width=True, hide_index=True)
-        st.info("综合规划模式下，本页直接读取V17优化结果，不使用页面固定数字重新计算方案。")
+        st.info(
+            "这里展示的是你刚刚运行的V17场景结果：绿电目标、成本、损耗和推荐方案都来自本次场景参数与模型输出。"
+            "页面不会再套用另一组演示价格另算一个彼此矛盾的答案；修改参数后需要重新运行V17，结果才会更新。"
+        )
+        with st.expander("为什么要直接使用V17结果"):
+            st.markdown(
+                "同一个项目只能有一套可追溯计算口径。若页面另用固定电价、固定损耗和固定电量重新计算，"
+                "就可能与V17容量规划和年度运行结果不一致。现在三类方案都沿用当前场景的目标电量、规划期、"
+                "绿电成本、线路损耗和固定投资，因此可以回溯到本次参数指纹与成果包。"
+            )
         return
     if not embedded:
         page_title("绿电直连规划", "根据当前实时调度结果计算绿电缺口，并比较三类补充方式的规划成本。")

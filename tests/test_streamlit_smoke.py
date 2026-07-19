@@ -9,7 +9,7 @@ def test_all_streamlit_pages_render_without_uncaught_exceptions() -> None:
     assert len(app.radio) == 1
 
     navigation = app.radio[0]
-    assert navigation.options == ["平台概览", "参数配置与运行", "运行分析", "绿电决策"]
+    assert navigation.options == ["平台概览", "参数配置与运行", "运行分析", "场景与决策"]
     for page in navigation.options:
         navigation.set_value(page)
         app.run(timeout=30)

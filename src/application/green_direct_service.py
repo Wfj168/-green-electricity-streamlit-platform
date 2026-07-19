@@ -64,6 +64,8 @@ class GreenDirectService:
 
     @staticmethod
     def from_v17_metrics(metrics: dict[str, Any]) -> pd.DataFrame:
+        if float(metrics.get("Green-direct target electricity", 0.0) or 0.0) <= 1e-9:
+            return pd.DataFrame(columns=["方案", "年度成本/万元"])
         mapping = {
             "园区内新增绿电": "Park-internal green-direct cost",
             "虚拟电厂聚合绿电": "VPP aggregated green-direct cost",

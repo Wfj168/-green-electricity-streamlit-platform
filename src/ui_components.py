@@ -47,7 +47,7 @@ def inject_global_css() -> None:
         .block-container {
           padding-top: 1.2rem;
           padding-bottom: 2.5rem;
-          max-width: 1440px;
+          max-width: 1560px;
         }
         .brand-card {
           display: flex;
@@ -90,6 +90,67 @@ def inject_global_css() -> None:
           font-weight: 800;
           margin: 8px 0 4px;
           color: #111827;
+        }
+        .cockpit-hero {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid #bfdbfe;
+          border-radius: 14px;
+          background:
+            radial-gradient(circle at 90% 10%, rgba(255,255,255,.55), transparent 26%),
+            linear-gradient(115deg, #e0f2fe 0%, #eff6ff 45%, #ecfeff 100%);
+          box-shadow: 0 18px 42px rgba(37, 99, 235, 0.10);
+          padding: 24px 30px;
+          margin: 4px 0 18px;
+        }
+        .cockpit-hero:after {
+          content: "";
+          position: absolute;
+          width: 320px;
+          height: 320px;
+          right: -110px;
+          top: -190px;
+          border: 34px solid rgba(37,99,235,.08);
+          border-radius: 50%;
+        }
+        .cockpit-eyebrow {
+          color: #2563eb;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: .14em;
+          margin-bottom: 5px;
+        }
+        .cockpit-title {
+          color: #0f3b67;
+          font-size: 30px;
+          font-weight: 900;
+          letter-spacing: .03em;
+        }
+        .cockpit-subtitle {
+          color: #526b85;
+          font-size: 14px;
+          margin-top: 7px;
+        }
+        .cockpit-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          margin-top: 13px;
+          padding: 6px 11px;
+          border-radius: 999px;
+          color: #166534;
+          background: rgba(220,252,231,.9);
+          border: 1px solid #86efac;
+          font-size: 12px;
+          font-weight: 700;
+        }
+        .cockpit-status:before {
+          content: "";
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #22c55e;
+          box-shadow: 0 0 0 4px rgba(34,197,94,.12);
         }
         .page-subtitle {
           font-size: 17px;
@@ -160,6 +221,67 @@ def inject_global_css() -> None:
           display: flex;
           justify-content: space-between;
           gap: 10px;
+        }
+        .dashboard-kpi {
+          min-height: 112px;
+          border: 1px solid #dbeafe;
+          border-top: 3px solid var(--kpi-color, #2563eb);
+          border-radius: 10px;
+          background: linear-gradient(180deg, #ffffff, #f8fbff);
+          box-shadow: 0 10px 28px rgba(15, 59, 103, .07);
+          padding: 15px 17px;
+        }
+        .dashboard-kpi small {
+          display: block;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 700;
+          margin-bottom: 10px;
+        }
+        .dashboard-kpi b {
+          color: #0f3b67;
+          font-size: 24px;
+          line-height: 1;
+        }
+        .dashboard-kpi span {
+          color: #526b85;
+          font-size: 12px;
+          margin-left: 3px;
+        }
+        .dashboard-kpi em {
+          display: block;
+          color: #7c8ea3;
+          font-size: 11px;
+          font-style: normal;
+          margin-top: 9px;
+        }
+        .insight-card {
+          min-height: 106px;
+          border: 1px solid #dbeafe;
+          border-left: 4px solid var(--insight-color, #2563eb);
+          border-radius: 10px;
+          background: #ffffff;
+          box-shadow: 0 8px 22px rgba(15, 59, 103, .06);
+          padding: 14px 16px;
+          margin-bottom: 10px;
+        }
+        .insight-card b {
+          display: block;
+          color: #173b60;
+          font-size: 14px;
+          margin-bottom: 7px;
+        }
+        .insight-card span {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.55;
+        }
+        div[data-testid="stPlotlyChart"] {
+          background: #fff;
+          border: 1px solid #e4edf7;
+          border-radius: 10px;
+          box-shadow: 0 10px 26px rgba(15, 59, 103, .055);
+          padding: 5px;
         }
         .metric-card small {
           display: block;
@@ -409,6 +531,37 @@ def metric_card(label: str, value: str, unit: str, color: str = "blue", mark: st
             <b>{html.escape(value)}</b><span>{html.escape(unit)}</span>
           </div>
           <div class="metric-mark">{html.escape(mark or label[:1])}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def dashboard_kpi(
+    label: str,
+    value: str,
+    unit: str = "",
+    note: str = "",
+    color: str = "#2563eb",
+) -> None:
+    st.markdown(
+        f"""
+        <div class="dashboard-kpi" style="--kpi-color:{html.escape(color)}">
+          <small>{html.escape(label)}</small>
+          <b>{html.escape(value)}</b><span>{html.escape(unit)}</span>
+          <em>{html.escape(note)}</em>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def insight_card(title: str, body: str, color: str = "#2563eb") -> None:
+    st.markdown(
+        f"""
+        <div class="insight-card" style="--insight-color:{html.escape(color)}">
+          <b>{html.escape(title)}</b>
+          <span>{html.escape(body)}</span>
         </div>
         """,
         unsafe_allow_html=True,

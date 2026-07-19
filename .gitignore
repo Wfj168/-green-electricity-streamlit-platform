@@ -13,6 +13,8 @@ outputs/
 .coverage
 htmlcov/
 .docx_qa*/
+.ui_qa*/
+~$*.docx
 .env
 .env.*
 !.env.example
