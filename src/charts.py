@@ -155,20 +155,20 @@ def carbon_decomposition(carbon: pd.DataFrame) -> go.Figure:
     ]
     labels = {
         "Grid import emissions [tCO2/year]": "主网购电碳排",
-        "CHP gas emissions [tCO2/year]": "CHP燃气碳排",
+        "CHP gas emissions [tCO2/year]": "热电联产燃气碳排",
         "Gas boiler emissions [tCO2/year]": "燃气锅炉碳排",
         "Green-direct avoided emissions proxy [tCO2/year]": "绿电直连减排",
-        "Endogenous P2X avoided emissions [tCO2/year]": "P2X减排",
+        "Endogenous P2X avoided emissions [tCO2/year]": "电转其他能源减排",
     }
     melted = data.melt(
         id_vars=["Scenario"],
         value_vars=[c for c in columns if c in data],
         var_name="类型",
-        value_name="tCO2",
+        value_name="排放量",
     )
     melted["类型"] = melted["类型"].map(labels).fillna(melted["类型"])
-    fig = px.bar(melted, x="Scenario", y="tCO2", color="类型", barmode="group", color_discrete_sequence=COLORWAY)
-    fig.update_layout(yaxis_title="tCO2/年", xaxis_title="场景")
+    fig = px.bar(melted, x="Scenario", y="排放量", color="类型", barmode="group", color_discrete_sequence=COLORWAY)
+    fig.update_layout(yaxis_title="吨二氧化碳/年", xaxis_title="场景")
     return _base_layout(fig, "碳排放来源与减排贡献")
 
 
@@ -191,7 +191,7 @@ def scenario_scatter(summary: pd.DataFrame) -> go.Figure:
     )
     fig.update_layout(
         xaxis_title="私有总成本 / 百万元·年",
-        yaxis_title="年度CO2排放 / t",
+        yaxis_title="年度二氧化碳排放 / 吨",
     )
     return _base_layout(fig, "成本-碳排-绿电吸纳综合对比")
 
@@ -202,12 +202,12 @@ def storage_profile(dispatch: pd.DataFrame, day_name: str) -> go.Figure:
     for label, column in [
         ("电池充电", "P_BAT_ch"),
         ("电池放电", "P_BAT_dis"),
-        ("电池SOC", "SOC_BAT"),
+        ("电池储能量", "SOC_BAT"),
         ("蓄热充热", "H_TS_ch"),
         ("蓄热放热", "H_TS_dis"),
-        ("蓄热SOC", "SOC_TS"),
+        ("蓄热储能量", "SOC_TS"),
     ]:
         if column in data:
             fig.add_trace(go.Scatter(x=data["hour_int"], y=data[column], mode="lines+markers", name=label))
-    fig.update_layout(yaxis_title="功率或SOC", xaxis_title="时间 / h")
+    fig.update_layout(yaxis_title="功率或储能量", xaxis_title="时间 / 小时")
     return _base_layout(fig, "储能充放与状态轨迹")

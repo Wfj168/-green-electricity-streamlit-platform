@@ -18,7 +18,7 @@ def run_static_checks() -> pd.DataFrame:
         "generator": ["Unit Name", "Installed Capacity [MW]", "Max Investment [MW]"],
         "storage": ["Unit Name", "Installed Capacity [MWh]", "Efficiency [-]"],
         "fuel": ["Fuel", "Cost", "Unit"],
-        "capex": ["Technology", "Annual investment cost [M EUR/year]"],
+        "capex": ["Technology", "Annual investment cost [M CNY/year]"],
     }
     tables = {
         "generator": default_generator_table(),

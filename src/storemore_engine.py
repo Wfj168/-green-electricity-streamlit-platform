@@ -27,7 +27,7 @@ def default_generator_table() -> pd.DataFrame:
             "Installed Capacity [MW]": [0.0, 10.0, 20.0],
             "Max Investment [MW]": [0.0, 300.0, 300.0],
             "Efficiency [share]": [0.31, 0.0, 0.0],
-            "Capital Investment Cost [M EUR/MW]": [1.3, 0.56, 1.1],
+            "Capital Investment Cost [M CNY/MW]": [1.3, 0.56, 1.1],
             "CO2 Intensity [tCO2/MWh]": [0.398, 0.0, 0.0],
         }
     )
@@ -50,7 +50,7 @@ def default_storage_table() -> pd.DataFrame:
             "Installed Capacity [MWh]": [2.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "Efficiency [-]": [0.90, 0.84, 0.51, 0.50, 0.75, 0.925, 0.90, 0.92],
             "Storage Ratio [-]": [0.5, 0.17, 0.07, 0.5, 0.1, 360.0, 360.3, 360.0],
-            "Variable Cost [EUR/MWh]": [1.0, 15.0, 30.0, 80.0, 60.0, 55.0, 35.0, 55.0],
+            "Variable Cost [CNY/MWh]": [1.0, 15.0, 30.0, 80.0, 60.0, 55.0, 35.0, 55.0],
             "Input/output capacity [MW]": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "Maximum investment into input/output system [MW]": [0.0] * 8,
             "Hourly storage loss as a share of SOC [-]": [
@@ -83,7 +83,7 @@ def default_capex_table() -> pd.DataFrame:
                 "Flywheel energy storage",
                 "Ultracapacitor energy storage",
             ],
-            "Annual investment cost [M EUR/year]": [0.0, 0.0, 0.0, 0.56, 1.0, 0.8, 1.2, 0.9, 2.0, 0.7, 0.6],
+            "Annual investment cost [M CNY/year]": [0.0, 0.0, 0.0, 0.56, 1.0, 0.8, 1.2, 0.9, 2.0, 0.7, 0.6],
         }
     )
 
@@ -93,7 +93,7 @@ def default_fuel_table() -> pd.DataFrame:
         {
             "Fuel": ["Gas", "Solar", "Wind", "Biogas", "Biomass", "Coal", "Oil", "Diesel"],
             "Cost": [60.0, 0.0, 0.0, 65.0, 45.0, 35.0, 80.0, 95.0],
-            "Unit": ["EUR/MWh"] * 8,
+            "Unit": ["CNY/MWh"] * 8,
         }
     )
 
@@ -442,7 +442,7 @@ def solve_rolling_dispatch(
             initial_soc=current_soc,
         )
         if dispatch_48h is None:
-            return None, None, f"Rolling optimization failed on day {day + 1}: {objective_value}"
+            return None, None, f"第{day + 1}个滚动日优化失败：{objective_value}"
         saved_24h = dispatch_48h.iloc[:24].copy()
         saved_24h["Rolling day"] = day + 1
         saved_24h["Window type"] = "real 24h result"
@@ -466,7 +466,7 @@ def summarize_indicators(
     gas_cost: float = 60.0,
     storage_variable_cost: float = 1.0,
     gas_co2_intensity: float = 0.398,
-    investment_cost_meur: float = 0.0,
+    investment_cost_mcny: float = 0.0,
 ) -> pd.DataFrame:
     total_generation = result_df[["Solar", "Wind", "Gas", "Import", "Storage discharge"]].sum().sum()
     total_renewable = result_df[["Solar", "Wind"]].sum().sum()
@@ -492,9 +492,9 @@ def summarize_indicators(
         "Renewable share [%]": total_renewable / total_generation * 100 if total_generation > 0 else 0,
         "CEEP share [%]": ceep_share,
         "CO2 emissions [tCO2]": co2_emissions,
-        "Operating cost proxy [EUR]": operating_cost,
-        "Annualized investment cost [M EUR/year]": investment_cost_meur,
-        "Total cost proxy [EUR]": operating_cost + investment_cost_meur * 1_000_000,
+        "Operating cost proxy [CNY]": operating_cost,
+        "Annualized investment cost [M CNY/year]": investment_cost_mcny,
+        "Total cost proxy [CNY]": operating_cost + investment_cost_mcny * 1_000_000,
     }
     return pd.DataFrame({"Metric": list(metrics.keys()), "Value": list(metrics.values())})
 
@@ -712,7 +712,7 @@ def run_storemore_simulation(
     storage_efficiency = get_table_value(storage_df, "Liion storage", "Efficiency [-]", 0.9)
     storage_loss = get_table_value(storage_df, "Liion storage", "Hourly storage loss as a share of SOC [-]", 0.00002)
     storage_ratio = get_table_value(storage_df, "Liion storage", "Storage Ratio [-]", 0.5)
-    storage_variable_cost = get_table_value(storage_df, "Liion storage", "Variable Cost [EUR/MWh]", 1.0)
+    storage_variable_cost = get_table_value(storage_df, "Liion storage", "Variable Cost [CNY/MWh]", 1.0)
     if storage_capacity <= 0:
         storage_power = 0.0
     else:
@@ -755,18 +755,18 @@ def run_storemore_simulation(
             "Unit": ["MW", "MW", "MWh"],
         }
     )
-    solar_capex = get_table_value(generator_df, "solar", "Capital Investment Cost [M EUR/MW]", 0.56)
-    wind_capex = get_table_value(generator_df, "wind", "Capital Investment Cost [M EUR/MW]", 1.1)
+    solar_capex = get_table_value(generator_df, "solar", "Capital Investment Cost [M CNY/MW]", 0.56)
+    wind_capex = get_table_value(generator_df, "wind", "Capital Investment Cost [M CNY/MW]", 1.1)
     storage_capex = 0.56
-    if capex_df is not None and {"Technology", "Annual investment cost [M EUR/year]"}.issubset(capex_df.columns):
+    if capex_df is not None and {"Technology", "Annual investment cost [M CNY/year]"}.issubset(capex_df.columns):
         match = capex_df.loc[
             capex_df["Technology"].astype(str).str.lower().str.contains("li-ion|liion", regex=True),
-            "Annual investment cost [M EUR/year]",
+            "Annual investment cost [M CNY/year]",
         ]
         if not match.empty:
             storage_capex = float(match.iloc[0])
-    investment_cost_meur = solar_invest * solar_capex + wind_invest * wind_capex + storage_invest * storage_capex
-    investment_df["Annualized cost proxy [M EUR/year]"] = [
+    investment_cost_mcny = solar_invest * solar_capex + wind_invest * wind_capex + storage_invest * storage_capex
+    investment_df["Annualized cost proxy [M CNY/year]"] = [
         solar_invest * solar_capex,
         wind_invest * wind_capex,
         storage_invest * storage_capex,
@@ -776,7 +776,7 @@ def run_storemore_simulation(
         gas_cost=gas_cost,
         storage_variable_cost=storage_variable_cost,
         gas_co2_intensity=gas_co2_intensity,
-        investment_cost_meur=investment_cost_meur,
+        investment_cost_mcny=investment_cost_mcny,
     )
     summary_df = pd.DataFrame(
         {
@@ -840,7 +840,7 @@ def run_storemore_simulation(
     zip_buffer.seek(0)
     return {
         "success": True,
-        "message": "MODEL SOLVED",
+        "message": "模型求解完成",
         "profiles": profiles,
         "summary": summary_df,
         "dispatch": result_df,

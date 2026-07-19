@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from typing import Any
@@ -96,7 +96,7 @@ class ForecastService:
             values = np.repeat(float(series.iloc[-self.season_points:].mean()), horizon_points)
         else:
             raise ValueError(f"不支持的预测模型：{evaluation.best_model}")
-        start = pd.Timestamp(frame.iloc[-1]["timestamp"]) + pd.Timedelta(minutes=15)
+        start = pd.Timestamp(frame.iloc[-1]["timestamp"]) + timedelta(minutes=15)
         timestamps = pd.date_range(start, periods=horizon_points, freq="15min")
         created_at = datetime.now(timezone.utc).isoformat()
         version_payload = {

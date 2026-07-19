@@ -15,6 +15,7 @@ import pandas as pd
 from src.application.simulation_service import SimulationRequest, SimulationService
 from src.core.schemas import StoreMoreInputs
 from src.model_adapter import build_scenario, run_quick_trial
+from src.presentation import localize_v17_table
 from src.storemore_engine import (
     default_capex_table,
     default_fuel_table,
@@ -59,7 +60,7 @@ MODEL_CATALOG = {
         "V17综合能源规划",
         V17_MODEL_VERSION,
         "scipy-highs-lp-milp",
-        "电、热、冷、气、储能、柔性负荷、碳和P2X协同规划。",
+        "电、热、冷、气、储能、柔性负荷、碳和电转其他能源协同规划。",
     ),
 }
 
@@ -248,6 +249,27 @@ class UnifiedModelService:
         if n_steps_per_hour not in {1, 2, 4}:
             raise ValueError("n_steps_per_hour必须是1、2或4")
 
+        effective_scenario = build_scenario(scenario_key, scenario_overrides)
+        carbon_baseline_tco2 = None
+        carbon_target_tco2 = None
+        if scenario_key != "S0" and effective_scenario.get("enable_carbon_constraint", False):
+            baseline_trial = run_quick_trial(
+                "S0",
+                overrides={},
+                n_steps_per_hour=n_steps_per_hour,
+                seed=seed,
+            )
+            if baseline_trial.get("success") and baseline_trial.get("result"):
+                baseline_metrics = self._metric_dict(baseline_trial["result"]["metrics"])
+                carbon_baseline_tco2 = float(baseline_metrics.get("Annual CO2 emissions", 0.0) or 0.0)
+                cap_ratio = float(effective_scenario.get("co2_cap_ratio_to_s0", 1.0))
+                carbon_target_tco2 = carbon_baseline_tco2 * cap_ratio
+                allowance = effective_scenario.get("carbon_allowance_tco2_per_year")
+                if allowance is not None:
+                    carbon_target_tco2 = min(carbon_target_tco2, float(allowance))
+                if "co2_cap" not in scenario_overrides:
+                    scenario_overrides["co2_cap"] = carbon_target_tco2 / 365.0
+
         trial = run_quick_trial(
             scenario_key,
             overrides=scenario_overrides,
@@ -263,6 +285,8 @@ class UnifiedModelService:
                     "n_steps_per_hour": n_steps_per_hour,
                     "seed": seed,
                     "override_fields": sorted(scenario_overrides),
+                    "carbon_baseline_tco2_per_year": carbon_baseline_tco2,
+                    "carbon_target_tco2_per_year": carbon_target_tco2,
                 },
             }
         )
@@ -292,6 +316,8 @@ class UnifiedModelService:
             "objective": self._json_value(raw_result.get("objective")),
             "annual_days": self._json_value(raw_result.get("annual_days")),
             "time_step_hours": self._json_value(raw_result.get("dt")),
+            "carbon_baseline_tco2_per_year": carbon_baseline_tco2,
+            "carbon_target_tco2_per_year": carbon_target_tco2,
         }
         artifact_bytes = self._v17_bundle(raw_result, trial["profiles"], trial["scenario"], metadata, summary)
         return ModelExecutionResult(
@@ -377,7 +403,23 @@ class UnifiedModelService:
             for key in ("capacity", "dispatch", "cost", "carbon", "metrics", "diagnostics"):
                 table = result.get(key)
                 if isinstance(table, pd.DataFrame):
-                    archive.writestr(f"data/{key}.csv", table.to_csv(index=False).encode("utf-8-sig"))
+                    archive.writestr(
+                        f"data/{key}.csv",
+                        table.to_csv(index=False).encode("utf-8-sig"),
+                    )
+                    chinese_names = {
+                        "capacity": "容量配置",
+                        "dispatch": "多能调度",
+                        "cost": "成本明细",
+                        "carbon": "碳排放",
+                        "metrics": "综合指标",
+                        "diagnostics": "运行诊断",
+                    }
+                    localized = localize_v17_table(key, table)
+                    archive.writestr(
+                        f"结果表/{chinese_names[key]}.csv",
+                        localized.to_csv(index=False).encode("utf-8-sig"),
+                    )
             if isinstance(profiles, pd.DataFrame):
                 archive.writestr("data/input_profiles.csv", profiles.to_csv(index=False).encode("utf-8-sig"))
             archive.writestr(

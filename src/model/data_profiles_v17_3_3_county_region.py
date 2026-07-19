@@ -23,15 +23,15 @@ def _tou_buy_price(hour: np.ndarray, day_type: str) -> np.ndarray:
     price = np.zeros_like(hour, dtype=float)
     for i, h in enumerate(hour):
         if 0 <= h < 7:
-            price[i] = 52.0
+            price[i] = 300.0
         elif 7 <= h < 11:
-            price[i] = 88.0
+            price[i] = 520.0
         elif 11 <= h < 16:
-            price[i] = 70.0
+            price[i] = 430.0
         elif 16 <= h < 22:
-            price[i] = 132.0
+            price[i] = 850.0
         else:
-            price[i] = 62.0
+            price[i] = 350.0
 
     if day_type == "summer_commercial":
         price[(hour >= 13) & (hour < 22)] *= 1.08
@@ -143,7 +143,7 @@ def generate_one_county_region_characteristic_day(
     # -----------------------------
     heat_scale = 1.0
     cooling_scale = 1.0
-    gas_price = 42.0
+    gas_price = 260.0
 
     if day_type == "spring_irrigation":
         irrigation = 8.5 * ((hour >= 7.0) & (hour < 12.0)) + 6.5 * ((hour >= 13.5) & (hour < 19.0))
@@ -159,7 +159,7 @@ def generate_one_county_region_characteristic_day(
             + 0.95 * _gaussian(hour, 6.8, 1.0)
             + 0.85 * _gaussian(hour, 18.4, 1.2)
         )
-        gas_price = 41.0
+        gas_price = 255.0
 
     elif day_type == "spring_pv_high":
         residential *= 0.95
@@ -171,7 +171,7 @@ def generate_one_county_region_characteristic_day(
         cooling_scale = 0.55
         low_altitude_patrol_uav_load *= 1.12
         low_altitude_remote_comm_load *= 1.08
-        gas_price = 40.5
+        gas_price = 250.0
 
     elif day_type == "summer_commercial":
         residential *= 1.08
@@ -186,7 +186,7 @@ def generate_one_county_region_characteristic_day(
             + 0.36 * _gaussian(hour, 15.8, 2.4)
         )
         low_altitude_emergency_load *= 1.18
-        gas_price = 40.0
+        gas_price = 245.0
 
     elif day_type == "autumn_processing":
         agro_processing = 8.0 + 8.0 * _gaussian(hour, 10.5, 2.8) + 7.0 * _gaussian(hour, 17.0, 3.0)
@@ -201,7 +201,7 @@ def generate_one_county_region_characteristic_day(
             + 0.42 * _gaussian(hour, 17.2, 1.8)
         )
         low_altitude_patrol_uav_load *= 1.15
-        gas_price = 42.5
+        gas_price = 265.0
 
     elif day_type == "winter_heating":
         residential *= 1.18
@@ -213,7 +213,7 @@ def generate_one_county_region_characteristic_day(
         low_altitude_patrol_uav_load *= 1.35
         low_altitude_emergency_load *= 1.45
         low_altitude_remote_comm_load *= 1.20
-        gas_price = 46.0
+        gas_price = 290.0
 
     elif day_type == "holiday_return":
         residential *= 1.42
@@ -224,7 +224,7 @@ def generate_one_county_region_characteristic_day(
         cooling_scale = 0.38
         low_altitude_emergency_load *= 1.25
         low_altitude_remote_comm_load *= 1.15
-        gas_price = 45.0
+        gas_price = 280.0
 
     else:
         raise ValueError(f"Unknown county-region-characteristic day type: {day_type}")
@@ -315,7 +315,7 @@ def generate_one_county_region_characteristic_day(
 
     pv_cf, wt_cf = _renewable_profiles(hour, day_type, rng)
     electricity_buy_price = _tou_buy_price(hour, day_type)
-    electricity_sell_price = 0.15 * electricity_buy_price
+    electricity_sell_price = 0.35 * electricity_buy_price
 
     # Industrial-park load proxy / MW.  This keeps the original county-level
     # model scope, but separately tags the industrial park / industrial cluster
@@ -427,7 +427,7 @@ def generate_one_county_region_characteristic_day(
             # Compatibility alias for older plotting scripts.
             "electricity_price": electricity_buy_price,
             "gas_price": np.full(n, gas_price),
-            "carbon_price": np.full(n, 45.0),
+            "carbon_price": np.full(n, 215.0),
         }
     )
     return df
