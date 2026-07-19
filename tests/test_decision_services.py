@@ -34,12 +34,25 @@ def test_green_direct_service_uses_losses_and_fixed_costs() -> None:
 def test_green_direct_service_extracts_true_v17_metrics() -> None:
     table = GreenDirectService.from_v17_metrics(
         {
+            "Green-direct target electricity": 80_000.0,
             "Park-internal green-direct cost": 48.0,
             "VPP aggregated green-direct cost": 60.0,
             "Remote green-base direct cost": 55.0,
         }
     )
     assert table.set_index("方案").loc["园区内新增绿电", "年度成本/万元"] == 4800.0
+
+
+def test_green_direct_service_hides_options_when_target_is_zero() -> None:
+    table = GreenDirectService.from_v17_metrics(
+        {
+            "Green-direct target electricity": 0.0,
+            "Park-internal green-direct cost": 0.0,
+            "VPP aggregated green-direct cost": 0.0,
+            "Remote green-base direct cost": 0.0,
+        }
+    )
+    assert table.empty
 
 
 def test_s0_to_s8_comparison_is_computed_and_traceable() -> None:
