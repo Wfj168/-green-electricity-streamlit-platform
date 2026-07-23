@@ -95,7 +95,7 @@ from src.ui_components import (
 
 
 st.set_page_config(
-    page_title="园区低碳规划与绿电直连优化平台",
+    page_title="零碳农业园区优化调度平台",
     page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded",
