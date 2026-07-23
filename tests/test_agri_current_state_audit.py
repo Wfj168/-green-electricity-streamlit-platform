@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from src.application.agri_current_state_audit import (
+    CURRENT_STATE_FINDINGS,
+    AuditSeverity,
+    AuditStatus,
+    current_state_audit_summary,
+)
+
+
+def test_current_state_audit_has_unique_traceable_findings() -> None:
+    finding_ids = [finding.finding_id for finding in CURRENT_STATE_FINDINGS]
+    assert len(finding_ids) == len(set(finding_ids))
+    assert all(finding.evidence and finding.impact for finding in CURRENT_STATE_FINDINGS)
+    assert all(3 <= finding.remediation_step <= 9 for finding in CURRENT_STATE_FINDINGS)
+
+
+def test_blockers_cover_data_green_carbon_and_charts() -> None:
+    blocker_categories = {
+        finding.category
+        for finding in CURRENT_STATE_FINDINGS
+        if finding.severity is AuditSeverity.BLOCKER
+    }
+    assert {"数据与负荷", "时间序列", "参数治理", "绿电直连", "碳核算", "结果图"}.issubset(
+        blocker_categories
+    )
+
+
+def test_current_state_audit_starts_as_an_open_remediation_ledger() -> None:
+    summary = current_state_audit_summary()
+    assert summary["finding_count"] == len(CURRENT_STATE_FINDINGS)
+    assert summary["open_count"] == len(CURRENT_STATE_FINDINGS)
+    assert all(finding.status is AuditStatus.OPEN for finding in CURRENT_STATE_FINDINGS)
