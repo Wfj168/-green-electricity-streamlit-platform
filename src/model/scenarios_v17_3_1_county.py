@@ -2,34 +2,36 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from src.core.agri_parameter_registry import phase1_parameter_value
+
 
 COMMON_PARAMS = {
     # Basic economics
-    "discount_rate": 0.05,
-    "life_years": 20,
-    "fixed_om_rate": 0.02,
+    "discount_rate": phase1_parameter_value("finance.discount_rate"),
+    "life_years": int(phase1_parameter_value("finance.planning_years")),
+    "fixed_om_rate": phase1_parameter_value("finance.fixed_om_rate"),
     "enable_chp": True,
     # 2025 演示基准。用于规划筛查，不代替设备询价或可研概算。
     "assumption_base_year": 2025,
     "cost_assumption_status": "公开项目与行业基准校准的演示参数，项目交付前需按属地询价更新",
-    "capex_pv": 3200000.0,
+    "capex_pv": phase1_parameter_value("pv.capex_cny_per_mw"),
     "capex_wt": 6500000.0,
     "capex_chp": 5500000.0,
-    "capex_hp": 1200000.0,
-    "capex_ec": 900000.0,
+    "capex_hp": phase1_parameter_value("thermal.heat_pump_capex_cny_per_mw"),
+    "capex_ec": phase1_parameter_value("thermal.refrigeration_capex_cny_per_mw"),
     "capex_gb": 400000.0,
-    "capex_bat_e": 900000.0,
-    "capex_bat_p": 700000.0,
+    "capex_bat_e": phase1_parameter_value("battery.capex_energy_cny_per_mwh"),
+    "capex_bat_p": phase1_parameter_value("battery.capex_power_cny_per_mw"),
     "capex_ts_e": 200000.0,
     "capex_ts_p": 150000.0,
 
     # Grid interface: local-consumption oriented, with limited export.
     "enable_grid_export": True,
-    "grid_import_capacity": 120.0,
-    "grid_export_capacity": 5.0,
+    "grid_import_capacity": phase1_parameter_value("grid.import_capacity_mw"),
+    "grid_export_capacity": phase1_parameter_value("grid.export_capacity_mw"),
     "max_annual_export_share_of_renewables": 0.10,
-    "grid_export_wheeling_charge": 8.0,
-    "grid_export_capacity_charge": 6000.0,
+    "grid_export_wheeling_charge": phase1_parameter_value("grid.export_wheeling_cny_per_mwh"),
+    "grid_export_capacity_charge": phase1_parameter_value("grid.export_capacity_charge_cny_per_mw_year"),
     "strict_grid_exchange_exclusivity": False,
 
     # Prevent export-led renewable overbuild.
@@ -59,15 +61,15 @@ COMMON_PARAMS = {
     # 3) remote green-energy base with dedicated transmission.
     "green_direct_target_share": 0.0,
     "green_direct_planning_years": 20,
-    "park_internal_green_lcoe_cny_per_mwh": 320.0,
-    "vpp_aggregated_green_lcoe_cny_per_mwh": 395.0,
-    "green_base_lcoe_cny_per_mwh": 355.0,
-    "park_internal_line_loss_rate": 0.015,
-    "vpp_aggregation_loss_rate": 0.025,
-    "green_base_transmission_loss_rate": 0.035,
-    "park_internal_fixed_cost_million_cny": 6.0,
-    "vpp_platform_fixed_cost_million_cny": 9.0,
-    "green_base_line_fixed_cost_million_cny": 18.0,
+    "park_internal_green_lcoe_cny_per_mwh": phase1_parameter_value("green_direct.park_lcoe_cny_per_mwh"),
+    "vpp_aggregated_green_lcoe_cny_per_mwh": phase1_parameter_value("green_direct.vpp_lcoe_cny_per_mwh"),
+    "green_base_lcoe_cny_per_mwh": phase1_parameter_value("green_direct.base_lcoe_cny_per_mwh"),
+    "park_internal_line_loss_rate": phase1_parameter_value("green_direct.park_loss_rate"),
+    "vpp_aggregation_loss_rate": phase1_parameter_value("green_direct.vpp_loss_rate"),
+    "green_base_transmission_loss_rate": phase1_parameter_value("green_direct.base_loss_rate"),
+    "park_internal_fixed_cost_million_cny": phase1_parameter_value("green_direct.park_fixed_cost_cny") / 1e6,
+    "vpp_platform_fixed_cost_million_cny": phase1_parameter_value("green_direct.vpp_fixed_cost_cny") / 1e6,
+    "green_base_line_fixed_cost_million_cny": phase1_parameter_value("green_direct.base_fixed_cost_cny") / 1e6,
 
     # V17.3.7投稿导向扩展：Power-to-X/绿氢替代潜力与深度碳管理筛查。
     "enable_p2x_screening": False,
@@ -76,7 +78,7 @@ COMMON_PARAMS = {
     "hydrogen_lhv_mwh_per_t": 33.33,
     "hydrogen_boiler_efficiency": 0.88,
     "green_hydrogen_lcoe_cny_per_mwh": 520.0,
-    "carbon_market_price_cny_per_tco2": 215.0,
+    "carbon_market_price_cny_per_tco2": phase1_parameter_value("carbon.price_cny_per_tco2"),
 
     # V17.3.9模型深化：将P2X从后处理筛查推进为线性优化中的内生决策。
     "enable_endogenous_p2x": False,
@@ -87,14 +89,14 @@ COMMON_PARAMS = {
     "max_p2x_electricity_share_of_renewable_generation": 0.35,
 
     # Adequacy and emissions
-    "reserve_margin": 0.10,
-    "pv_capacity_credit": 0.08,
+    "reserve_margin": phase1_parameter_value("grid.reserve_margin"),
+    "pv_capacity_credit": phase1_parameter_value("pv.capacity_credit"),
     "wt_capacity_credit": 0.15,
-    "grid_emission_factor": 0.55,
+    "grid_emission_factor": phase1_parameter_value("grid.emission_factor_tco2_per_mwh"),
     "gas_emission_factor": 0.20,
 
     # Moderate penalties: the model is allowed to show reasonable curtailment.
-    "renewable_curtailment_penalty": 20.0,
+    "renewable_curtailment_penalty": phase1_parameter_value("pv.curtailment_penalty_cny_per_mwh"),
     "load_shifting_cost": 30.0,
     "interruptible_load_cost": 1200.0,
 
@@ -104,16 +106,24 @@ COMMON_PARAMS = {
     "electric_unserved_energy_penalty": 18000.0,
     "heat_unserved_energy_penalty": 12000.0,
     "cooling_unserved_energy_penalty": 10000.0,
-    "max_annual_unserved_energy_ratio": 0.0001,
+    "max_annual_unserved_energy_ratio": phase1_parameter_value("grid.max_unserved_energy_ratio"),
 
     # Storage realism
-    "battery_degradation_cost": 120.0,
+    "battery_degradation_cost": phase1_parameter_value("battery.degradation_cny_per_mwh"),
     "thermal_storage_degradation_cost": 10.0,
-    "max_battery_equivalent_cycles": 350.0,
+    "max_battery_equivalent_cycles": phase1_parameter_value("battery.max_equivalent_cycles"),
     "max_thermal_storage_equivalent_cycles": 365.0,
+    "eta_bat_ch": phase1_parameter_value("battery.charge_efficiency"),
+    "eta_bat_dis": phase1_parameter_value("battery.discharge_efficiency"),
+    "soc_bat_min": phase1_parameter_value("battery.soc_min"),
+    "soc_bat_max": phase1_parameter_value("battery.soc_max"),
+    "bat_initial_soc": phase1_parameter_value("battery.soc_initial"),
+    "bat_self_discharge_per_hour": phase1_parameter_value("battery.self_discharge_per_hour"),
+    "cop_hp": phase1_parameter_value("thermal.heat_pump_cop"),
+    "cop_ec": phase1_parameter_value("thermal.refrigeration_cop"),
 
     # Grid-operation effects
-    "grid_demand_charge": 18000.0,
+    "grid_demand_charge": phase1_parameter_value("grid.demand_charge_cny_per_mw_year"),
     "grid_smoothing_penalty": 8.0,
     "grid_ramp_limit_per_hour": 30.0,
     "device_smoothing_penalty": 5.0,
@@ -131,14 +141,14 @@ COMMON_PARAMS = {
     "gb_ramp_rate_per_hour": 0.70,
 
     # Planning search ranges
-    "max_pv_capacity": 220.0,
+    "max_pv_capacity": phase1_parameter_value("pv.max_capacity_mw"),
     "max_wt_capacity": 220.0,
     "max_chp_capacity": 100.0,
     "max_hp_capacity": 150.0,
     "max_ec_capacity": 120.0,
     "max_gb_capacity": 150.0,
-    "max_battery_energy_capacity": 300.0,
-    "max_battery_power_capacity": 120.0,
+    "max_battery_energy_capacity": phase1_parameter_value("battery.max_energy_mwh"),
+    "max_battery_power_capacity": phase1_parameter_value("battery.max_power_mw"),
     "max_thermal_storage_energy_capacity": 300.0,
     "max_thermal_storage_power_capacity": 120.0,
 

@@ -27,11 +27,14 @@ def test_project_center_is_hidden_for_invalid_api_url(monkeypatch) -> None:
 
 def test_integrated_planning_configuration_runs_end_to_end() -> None:
     app = AppTest.from_file("app.py", default_timeout=60).run()
-    app.selectbox[0].set_value("V17综合能源规划")
+    app.selectbox[0].set_value("V17农业零碳园区规划")
     app.run(timeout=60)
     app.radio[0].set_value("参数配置与运行")
     app.run(timeout=60)
     assert not app.exception
+
+    next(checkbox for checkbox in app.checkbox if checkbox.label == "显示原V17县域综合能源兼容配置").check()
+    app.run(timeout=60)
 
     run_button = next(button for button in app.button if button.label == "开始综合能源规划")
     run_button.click()
@@ -56,6 +59,8 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
 
     app.radio[0].set_value("场景与决策")
     app.run(timeout=60)
+    next(checkbox for checkbox in app.checkbox if checkbox.label == "显示原V17县域多场景兼容功能").check()
+    app.run(timeout=60)
     compare_button = next(button for button in app.button if button.label == "运行真实场景对比")
     compare_button.click()
     app.run(timeout=60)
@@ -68,6 +73,9 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
 def test_data_forecast_and_intraday_page_runs_end_to_end() -> None:
     app = AppTest.from_file("app.py", default_timeout=60).run()
     app.radio[0].set_value("参数配置与运行")
+    app.run(timeout=60)
+
+    next(checkbox for checkbox in app.checkbox if checkbox.label == "显示15分钟数据校验与预测工具").check()
     app.run(timeout=60)
 
     next(button for button in app.button if button.label == "加载14天示例数据并检查").click()

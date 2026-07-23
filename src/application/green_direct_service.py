@@ -5,6 +5,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.core.agri_parameter_registry import phase1_parameter_value
+
 
 @dataclass(frozen=True, slots=True)
 class GreenDirectRequest:
@@ -15,12 +17,12 @@ class GreenDirectRequest:
     park_lcoe_cny_per_mwh: float
     vpp_lcoe_cny_per_mwh: float
     base_lcoe_cny_per_mwh: float
-    park_loss_rate: float = 0.015
-    vpp_loss_rate: float = 0.025
-    base_loss_rate: float = 0.035
-    park_fixed_cost_wan_cny: float = 600.0
-    vpp_fixed_cost_wan_cny: float = 900.0
-    base_fixed_cost_wan_cny: float = 1800.0
+    park_loss_rate: float = phase1_parameter_value("green_direct.park_loss_rate")
+    vpp_loss_rate: float = phase1_parameter_value("green_direct.vpp_loss_rate")
+    base_loss_rate: float = phase1_parameter_value("green_direct.base_loss_rate")
+    park_fixed_cost_wan_cny: float = phase1_parameter_value("green_direct.park_fixed_cost_cny") / 10_000.0
+    vpp_fixed_cost_wan_cny: float = phase1_parameter_value("green_direct.vpp_fixed_cost_cny") / 10_000.0
+    base_fixed_cost_wan_cny: float = phase1_parameter_value("green_direct.base_fixed_cost_cny") / 10_000.0
 
 
 @dataclass(frozen=True, slots=True)
