@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -29,6 +30,15 @@ from src.application import (
     list_integrated_scenarios,
 )
 from src.api.client import ApiClientError, PlatformApiClient
+from src.agri_dashboard_charts import (
+    agri_day_dispatch_figure,
+    agri_energy_flow_sankey_figure,
+    agri_load_calendar_figure,
+    agri_monthly_balance_figure,
+    agri_storage_origin_figure,
+    agri_strategy_cost_carbon_figure,
+    agri_zero_carbon_disposition_figure,
+)
 from src.core import (
     FifteenMinuteDataContract,
     IntegratedPlanningConfig,
@@ -53,6 +63,7 @@ from src.dashboard_charts import (
     scenario_score_table,
 )
 from src.presentation import localize_v17_table
+from src.model.agri_park_profiles import generate_agri_park_profiles
 from src.storemore_engine import (
     csv_template,
     default_capex_table,
@@ -102,6 +113,30 @@ MODEL_LABELS = {
     ModelKind.REALTIME_DISPATCH.value: "快速电力滚动调度",
     ModelKind.INTEGRATED_PLANNING.value: "V17综合能源规划",
 }
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+@st.cache_data(show_spinner=False)
+def phase1_agri_visual_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, float]]:
+    demo_dir = PROJECT_ROOT / "data" / "demo"
+    profiles = generate_agri_park_profiles(2025, 60)
+    comparison = pd.read_csv(demo_dir / "phase1_strategy_comparison.csv", encoding="utf-8-sig")
+    annual_flows = pd.read_csv(demo_dir / "phase1_green_direct_annual_flows.csv", encoding="utf-8-sig")
+    zero_dispatch = pd.read_csv(
+        demo_dir / "phase1_zero_carbon_dispatch.csv.gz",
+        encoding="utf-8-sig",
+        compression="gzip",
+        parse_dates=["timestamp"],
+    )
+    zero_summary = {
+        key: float(value)
+        for key, value in pd.read_csv(
+            demo_dir / "phase1_zero_carbon_summary.csv",
+            encoding="utf-8-sig",
+        ).iloc[0].to_dict().items()
+    }
+    return profiles, comparison, annual_flows, zero_dispatch, zero_summary
 
 
 def init_state() -> None:
@@ -1803,11 +1838,80 @@ def data_forecast_page(*, embedded: bool = False) -> None:
         )
 
 
+def render_agri_zero_carbon_analysis() -> None:
+    profiles, comparison, annual_flows, zero_dispatch, zero_summary = phase1_agri_visual_data()
+    baseline = comparison.iloc[0]
+    direct = comparison.iloc[1]
+    zero = comparison.iloc[2]
+    premium = float(zero["年总成本/万元"] - baseline["年总成本/万元"])
+    premium_rate = 100.0 * premium / max(float(baseline["年总成本/万元"]), 1e-9)
+
+    section_label("第一阶段 · 基于绿电直连的零碳农业园区")
+    status_box(
+        "当前判定",
+        "模型计算排放为零，但关键参数仍为演示假设，正式项目暂不可核验",
+        False,
+    )
+    cards = st.columns(5)
+    with cards[0]:
+        dashboard_kpi("农业园区年用电", fmt(zero_summary["annual_demand_mwh"]), "兆瓦时", "四类负荷总表闭环", "#2563eb")
+    with cards[1]:
+        dashboard_kpi("绿电直连方案匹配率", fmt(direct["物理绿电匹配率/%"]), "%", "当前1兆瓦直连演示方案", "#16a34a")
+    with cards[2]:
+        dashboard_kpi("零碳推荐直连容量", fmt(zero["绿电直连/兆瓦"]), "兆瓦", "8760小时联合优化", "#059669")
+    with cards[3]:
+        dashboard_kpi("零碳方案年成本", fmt(zero["年总成本/万元"]), "万元", f"较现状增加{premium_rate:.1f}%", "#7c3aed")
+    with cards[4]:
+        dashboard_kpi("零碳方案弃电", fmt(zero_summary["annual_curtailment_mwh"]), "兆瓦时", "揭示逐时零碳的过配代价", "#ef4444")
+
+    first_left, first_right = st.columns([1.15, 1])
+    with first_left:
+        st.plotly_chart(agri_load_calendar_figure(profiles), use_container_width=True)
+    with first_right:
+        st.plotly_chart(agri_strategy_cost_carbon_figure(comparison), use_container_width=True)
+
+    st.plotly_chart(agri_energy_flow_sankey_figure(annual_flows), use_container_width=True)
+
+    balance_left, balance_right = st.columns([1.25, 0.75])
+    with balance_left:
+        st.plotly_chart(agri_monthly_balance_figure(zero_dispatch), use_container_width=True)
+    with balance_right:
+        st.plotly_chart(agri_zero_carbon_disposition_figure(zero_summary), use_container_width=True)
+
+    section_label("关键农时逐时调度")
+    date_options = {
+        "春灌高峰 · 5月10日": "2025-05-10",
+        "夏季冷链 · 7月20日": "2025-07-20",
+        "秋收加工 · 10月10日": "2025-10-10",
+        "冬季低光伏 · 12月20日": "2025-12-20",
+    }
+    selected_label = st.selectbox("选择农业生产时段", list(date_options), key="phase1_agri_analysis_date")
+    selected_date = date_options[selected_label]
+    st.plotly_chart(agri_day_dispatch_figure(zero_dispatch, selected_date), use_container_width=True)
+    st.plotly_chart(agri_storage_origin_figure(zero_dispatch, selected_date), use_container_width=True)
+
+    section_label("三策略同口径对账")
+    st.dataframe(comparison, use_container_width=True, hide_index=True)
+    st.download_button(
+        "下载三策略对比表",
+        data=comparison.to_csv(index=False).encode("utf-8-sig"),
+        file_name="农业零碳园区三策略对比.csv",
+        mime="text/csv",
+        key="download_phase1_agri_comparison",
+    )
+    st.caption(
+        "图中所有金额均为人民币。负荷、造价、电价、碳因子和设备上限目前属于E级演示参数；"
+        "正式交付前必须用园区计量、合同、铭牌、报价和属地官方因子替换。"
+    )
+
+
 def integrated_analysis_page() -> None:
     page_title(
-        "V17综合能源运行分析",
-        "从容量、电量、成本、多能协同、可靠性和约束执行六个角度解释本次规划结果。",
+        "农业零碳园区运行分析",
+        "按农业生产日历、物理绿电流向、储能来源分账、成本碳排权衡和关键农时逐时调度解释规划结果。",
     )
+    render_agri_zero_carbon_analysis()
+    section_label("原V17综合能源结果（兼容保留）")
     execution = require_integrated_result()
     if execution is None:
         return

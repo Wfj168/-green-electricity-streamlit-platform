@@ -53,6 +53,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "居民、商业、一般工业和低空经济负荷仍与农业负荷相加。",
         "农业园区指标分母、容量规模和能源流向均被边界外对象稀释。",
         4,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "TIME-001",
@@ -62,6 +63,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "当前使用六类典型日加权为365天，储能在每个典型日内循环闭合。",
         "无法表达连续阴天、跨日荷电状态和真实农业季节持续性。",
         4,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "PARAM-001",
@@ -91,6 +93,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "风电、热电联产、燃气锅炉、绿氢、电转其他能源和低空经济仍在默认模型范围内。",
         "增加无关参数和图表，降低第一阶段结论的可解释性。",
         4,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "GREEN-001",
@@ -160,6 +163,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "图中只有光伏、风电、电网、热电联产、储能与统一终端负荷。",
         "无法解释零碳农业园区的真实能量流向。",
         7,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "CHART-002",
@@ -169,6 +173,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "五个百分比指标经过0至100裁剪后直接绘制，缺少目标值和绝对量。",
         "容易把相近或受分母影响的指标解释为全面优秀。",
         7,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "CHART-003",
@@ -178,6 +183,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "热力图只有六类典型日，持续时间曲线通过复制权重构造。",
         "不能识别连续极端事件和真实月度农业季节。",
         7,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "CHART-004",
@@ -187,6 +193,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "场景集合变化时0至100分会变化，权重尚未由农业园区项目方确认。",
         "得分不能作为绝对项目可研结论。",
         7,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "UI-001",

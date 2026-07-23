@@ -29,7 +29,7 @@ def test_blockers_cover_data_green_carbon_and_charts() -> None:
 def test_current_state_audit_tracks_completed_remediation_without_erasing_findings() -> None:
     summary = current_state_audit_summary()
     assert summary["finding_count"] == len(CURRENT_STATE_FINDINGS)
-    assert summary["open_count"] == len(CURRENT_STATE_FINDINGS) - 8
+    assert summary["open_count"] == len(CURRENT_STATE_FINDINGS) - 15
     resolved_ids = {
         finding.finding_id
         for finding in CURRENT_STATE_FINDINGS
@@ -44,4 +44,11 @@ def test_current_state_audit_tracks_completed_remediation_without_erasing_findin
         "MODEL-001",
         "MODEL-002",
         "MODEL-003",
+        "DATA-002",
+        "TIME-001",
+        "SCOPE-001",
+        "CHART-001",
+        "CHART-002",
+        "CHART-003",
+        "CHART-004",
     }
