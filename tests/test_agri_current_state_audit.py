@@ -26,8 +26,13 @@ def test_blockers_cover_data_green_carbon_and_charts() -> None:
     )
 
 
-def test_current_state_audit_starts_as_an_open_remediation_ledger() -> None:
+def test_current_state_audit_tracks_completed_remediation_without_erasing_findings() -> None:
     summary = current_state_audit_summary()
     assert summary["finding_count"] == len(CURRENT_STATE_FINDINGS)
-    assert summary["open_count"] == len(CURRENT_STATE_FINDINGS)
-    assert all(finding.status is AuditStatus.OPEN for finding in CURRENT_STATE_FINDINGS)
+    assert summary["open_count"] == len(CURRENT_STATE_FINDINGS) - 2
+    resolved_ids = {
+        finding.finding_id
+        for finding in CURRENT_STATE_FINDINGS
+        if finding.status is AuditStatus.RESOLVED
+    }
+    assert resolved_ids == {"PARAM-001", "PARAM-002"}

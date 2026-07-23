@@ -33,6 +33,7 @@ from src.core import (
     FifteenMinuteDataContract,
     IntegratedPlanningConfig,
     TimeSeriesValidationResult,
+    phase1_parameter_value,
     sample_15min_data,
     scenario_fingerprint,
 )
@@ -2619,18 +2620,60 @@ def green_direct_page(*, embedded: bool = False) -> None:
     c1, c2, c3, c4, c5 = st.columns(5)
     target_share = c1.slider("目标绿电占比 / %", 10.0, 100.0, max(60.0, float(metrics.get("Renewable share [%]", 0.0))), 1.0)
     planning_years = c2.number_input("规划周期 / 年", min_value=1, max_value=50, value=int(inputs.get("service_life", 25) or 25), step=1)
-    green_lcoe = c3.number_input("园区内绿电成本 / 元每兆瓦时", min_value=1.0, max_value=1500.0, value=360.0, step=10.0)
-    vpp_lcoe = c4.number_input("虚拟电厂绿电成本 / 元每兆瓦时", min_value=1.0, max_value=1500.0, value=430.0, step=10.0)
-    base_lcoe = c5.number_input("绿电基地成本 / 元每兆瓦时", min_value=1.0, max_value=1500.0, value=390.0, step=10.0)
+    green_lcoe = c3.number_input(
+        "园区内绿电成本 / 元每兆瓦时",
+        min_value=1.0,
+        max_value=1500.0,
+        value=phase1_parameter_value("green_direct.park_lcoe_cny_per_mwh"),
+        step=10.0,
+    )
+    vpp_lcoe = c4.number_input(
+        "虚拟电厂绿电成本 / 元每兆瓦时",
+        min_value=1.0,
+        max_value=1500.0,
+        value=phase1_parameter_value("green_direct.vpp_lcoe_cny_per_mwh"),
+        step=10.0,
+    )
+    base_lcoe = c5.number_input(
+        "绿电基地成本 / 元每兆瓦时",
+        min_value=1.0,
+        max_value=1500.0,
+        value=phase1_parameter_value("green_direct.base_lcoe_cny_per_mwh"),
+        step=10.0,
+    )
     with st.expander("线路损耗与固定工程费"):
         c6, c7, c8 = st.columns(3)
-        park_loss = c6.slider("园区内损耗 / %", 0.0, 20.0, 1.5, 0.1)
-        vpp_loss = c7.slider("虚拟电厂聚合损耗 / %", 0.0, 20.0, 2.5, 0.1)
-        base_loss = c8.slider("绿电基地专线损耗 / %", 0.0, 20.0, 3.5, 0.1)
+        park_loss = c6.slider(
+            "园区内损耗 / %", 0.0, 20.0, 100.0 * phase1_parameter_value("green_direct.park_loss_rate"), 0.1
+        )
+        vpp_loss = c7.slider(
+            "虚拟电厂聚合损耗 / %", 0.0, 20.0, 100.0 * phase1_parameter_value("green_direct.vpp_loss_rate"), 0.1
+        )
+        base_loss = c8.slider(
+            "绿电基地专线损耗 / %", 0.0, 20.0, 100.0 * phase1_parameter_value("green_direct.base_loss_rate"), 0.1
+        )
         c9, c10, c11 = st.columns(3)
-        park_fixed = c9.number_input("园区内固定工程费 / 万元", 0.0, 200_000.0, 600.0, 100.0)
-        vpp_fixed = c10.number_input("虚拟电厂平台费 / 万元", 0.0, 200_000.0, 900.0, 100.0)
-        base_fixed = c11.number_input("绿电基地专线工程费 / 万元", 0.0, 200_000.0, 1800.0, 100.0)
+        park_fixed = c9.number_input(
+            "园区内固定工程费 / 万元",
+            0.0,
+            200_000.0,
+            phase1_parameter_value("green_direct.park_fixed_cost_cny") / 10_000.0,
+            100.0,
+        )
+        vpp_fixed = c10.number_input(
+            "虚拟电厂平台费 / 万元",
+            0.0,
+            200_000.0,
+            phase1_parameter_value("green_direct.vpp_fixed_cost_cny") / 10_000.0,
+            100.0,
+        )
+        base_fixed = c11.number_input(
+            "绿电基地专线工程费 / 万元",
+            0.0,
+            200_000.0,
+            phase1_parameter_value("green_direct.base_fixed_cost_cny") / 10_000.0,
+            100.0,
+        )
 
     assessment = GreenDirectService().evaluate(
         GreenDirectRequest(

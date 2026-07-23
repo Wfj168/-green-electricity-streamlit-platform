@@ -71,6 +71,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "价格、造价、碳因子、设备效率和容量边界分散在模型、配置和页面中。",
         "结果不能逐参数解释，也难以在正式项目中替换和审批。",
         3,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "PARAM-002",
@@ -80,6 +81,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "V17为320/395/355元每兆瓦时，快速页面为360/430/390元每兆瓦时。",
         "同一项目可能因入口不同得到不同的方案推荐。",
         3,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "SCOPE-001",

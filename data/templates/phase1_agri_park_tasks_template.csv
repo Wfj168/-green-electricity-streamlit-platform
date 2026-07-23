@@ -1,0 +1,1 @@
+task_id,load_category,asset_id,earliest_start,latest_finish,duration_intervals,minimum_power_mw,maximum_power_mw,required_energy_mwh,product_quantity_t,must_run,source_reference
