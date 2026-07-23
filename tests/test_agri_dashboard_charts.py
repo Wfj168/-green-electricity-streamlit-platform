@@ -8,6 +8,7 @@ from src.agri_dashboard_charts import (
     agri_load_calendar_figure,
     agri_monthly_balance_figure,
     agri_storage_origin_figure,
+    agri_stress_test_figure,
     agri_strategy_cost_carbon_figure,
     agri_zero_carbon_disposition_figure,
 )
@@ -58,3 +59,10 @@ def test_agriculture_sankey_and_disposition_keep_absolute_energy_values() -> Non
     assert len(agri_energy_flow_sankey_figure(annual_flows).data) == 1
     assert sum(agri_energy_flow_sankey_figure(annual_flows).data[0].link.value) == 150.0
     assert len(agri_zero_carbon_disposition_figure(summary).data) == 1
+
+
+def test_stress_figure_displays_energy_shortfall_and_cost_change() -> None:
+    stress = pd.read_csv("data/demo/phase1_stress_test_results.csv", encoding="utf-8-sig")
+    figure = agri_stress_test_figure(stress)
+    assert len(figure.data) == 2
+    assert max(figure.data[0].y) > 0.0

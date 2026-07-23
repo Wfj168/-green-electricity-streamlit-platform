@@ -59,3 +59,21 @@ def test_invalid_green_target_and_planning_interval_are_rejected() -> None:
         optimizer.optimize(_winter_week(), AgriOptimizationRequest(target_physical_green_share=1.1))
     with pytest.raises(ValueError, match="容量规划时间间隔"):
         optimizer.optimize(_winter_week(), AgriOptimizationRequest(planning_interval_hours=5))
+    with pytest.raises(ValueError, match="超过农业园区规划边界"):
+        optimizer.optimize(_winter_week(), AgriOptimizationRequest(fixed_pv_capacity_mw=5.0))
+
+
+def test_fixed_capacity_dispatch_does_not_silently_expand_assets() -> None:
+    request = AgriOptimizationRequest(
+        target_physical_green_share=0.0,
+        fixed_pv_capacity_mw=1.0,
+        fixed_green_direct_capacity_mw=1.0,
+        fixed_battery_power_mw=0.5,
+        fixed_battery_energy_mwh=1.0,
+    )
+    result = AgriZeroCarbonOptimizer().optimize(_winter_week(), request)
+    assert result.success, result.status
+    assert result.capacities["pv_capacity_mw"] == pytest.approx(1.0)
+    assert result.capacities["green_direct_capacity_mw"] == pytest.approx(1.0)
+    assert result.capacities["battery_power_mw"] == pytest.approx(0.5)
+    assert result.capacities["battery_energy_mwh"] == pytest.approx(1.0)

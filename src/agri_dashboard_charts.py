@@ -292,3 +292,37 @@ def agri_zero_carbon_disposition_figure(summary: dict[str, float]) -> go.Figure:
     )
     figure.update_yaxes(title="年电量/兆瓦时")
     return _layout(figure, "零碳方案新增绿电的实际去向", 430)
+
+
+def agri_stress_test_figure(stress_table: pd.DataFrame) -> go.Figure:
+    data = stress_table[stress_table["压力编号"].ne("BASE")].copy()
+    labels = data["压力条件"].str.replace(r"（.*）", "", regex=True)
+    grid_import = pd.to_numeric(data["年购普通电/兆瓦时"], errors="coerce").fillna(0.0)
+    cost_change = pd.to_numeric(data["相对基准成本变化/%"], errors="coerce").fillna(0.0)
+    passed_values = data["零碳是否保持"].astype(str).str.lower().eq("true")
+    colors = [GREEN if passed else RED for passed in passed_values]
+    figure = make_subplots(specs=[[{"secondary_y": True}]])
+    figure.add_trace(
+        go.Bar(
+            x=labels,
+            y=grid_import,
+            name="压力下普通电网缺口",
+            marker_color=colors,
+            text=[f"{value:,.0f}" for value in grid_import],
+            textposition="outside",
+        ),
+        secondary_y=False,
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=labels,
+            y=cost_change,
+            name="年成本变化",
+            mode="lines+markers",
+            line={"color": PURPLE, "width": 3},
+        ),
+        secondary_y=True,
+    )
+    figure.update_yaxes(title_text="普通电网补充电量/兆瓦时", secondary_y=False)
+    figure.update_yaxes(title_text="相对基准成本变化", ticksuffix="%", secondary_y=True)
+    return _layout(figure, "固定推荐容量的六类压力测试", 470)

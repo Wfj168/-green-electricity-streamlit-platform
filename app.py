@@ -36,6 +36,7 @@ from src.agri_dashboard_charts import (
     agri_load_calendar_figure,
     agri_monthly_balance_figure,
     agri_storage_origin_figure,
+    agri_stress_test_figure,
     agri_strategy_cost_carbon_figure,
     agri_zero_carbon_disposition_figure,
 )
@@ -118,7 +119,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 @st.cache_data(show_spinner=False)
-def phase1_agri_visual_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, float]]:
+def phase1_agri_visual_data() -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    dict[str, float],
+    pd.DataFrame,
+]:
     demo_dir = PROJECT_ROOT / "data" / "demo"
     profiles = generate_agri_park_profiles(2025, 60)
     comparison = pd.read_csv(demo_dir / "phase1_strategy_comparison.csv", encoding="utf-8-sig")
@@ -136,7 +144,8 @@ def phase1_agri_visual_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame,
             encoding="utf-8-sig",
         ).iloc[0].to_dict().items()
     }
-    return profiles, comparison, annual_flows, zero_dispatch, zero_summary
+    stress_tests = pd.read_csv(demo_dir / "phase1_stress_test_results.csv", encoding="utf-8-sig")
+    return profiles, comparison, annual_flows, zero_dispatch, zero_summary, stress_tests
 
 
 def init_state() -> None:
@@ -1839,7 +1848,7 @@ def data_forecast_page(*, embedded: bool = False) -> None:
 
 
 def render_agri_zero_carbon_analysis() -> None:
-    profiles, comparison, annual_flows, zero_dispatch, zero_summary = phase1_agri_visual_data()
+    profiles, comparison, annual_flows, zero_dispatch, zero_summary, stress_tests = phase1_agri_visual_data()
     baseline = comparison.iloc[0]
     direct = comparison.iloc[1]
     zero = comparison.iloc[2]
@@ -1903,6 +1912,15 @@ def render_agri_zero_carbon_analysis() -> None:
         "图中所有金额均为人民币。负荷、造价、电价、碳因子和设备上限目前属于E级演示参数；"
         "正式交付前必须用园区计量、合同、铭牌、报价和属地官方因子替换。"
     )
+    section_label("固定推荐容量压力测试")
+    passed_stress = stress_tests["零碳是否保持"].astype(str).str.lower().eq("true")
+    failed_count = int((~passed_stress).sum())
+    st.warning(
+        f"六类压力条件中有{failed_count}类会使当前推荐容量失去零碳："
+        "低光伏、秋收集中加工和绿电直连受限。"
+    )
+    st.plotly_chart(agri_stress_test_figure(stress_tests), use_container_width=True)
+    st.dataframe(stress_tests, use_container_width=True, hide_index=True)
 
 
 def integrated_analysis_page() -> None:

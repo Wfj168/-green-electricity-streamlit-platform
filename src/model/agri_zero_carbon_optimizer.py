@@ -41,6 +41,10 @@ class AgriOptimizationRequest:
     allow_green_direct: bool = True
     allow_battery: bool = True
     allow_export: bool = True
+    fixed_pv_capacity_mw: float | None = None
+    fixed_green_direct_capacity_mw: float | None = None
+    fixed_battery_power_mw: float | None = None
+    fixed_battery_energy_mwh: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,9 +123,18 @@ class AgriZeroCarbonOptimizer:
         self._validate_no_arbitrage_conditions(profiles)
         planning_profiles = self._aggregate_for_planning(profiles, request.planning_interval_hours)
         candidates: list[AgriOptimizationResult] = []
-        candidates.append(self._solve_case(planning_profiles, request, direct_enabled=False))
-        if request.allow_green_direct:
-            candidates.append(self._solve_case(planning_profiles, request, direct_enabled=True))
+        if request.fixed_green_direct_capacity_mw is not None:
+            candidates.append(
+                self._solve_case(
+                    planning_profiles,
+                    request,
+                    direct_enabled=request.fixed_green_direct_capacity_mw > 0.0,
+                )
+            )
+        else:
+            candidates.append(self._solve_case(planning_profiles, request, direct_enabled=False))
+            if request.allow_green_direct:
+                candidates.append(self._solve_case(planning_profiles, request, direct_enabled=True))
         feasible = [candidate for candidate in candidates if candidate.success]
         if not feasible:
             status = "；".join(candidate.status for candidate in candidates)
@@ -134,6 +147,28 @@ class AgriZeroCarbonOptimizer:
             raise ValueError("物理绿电匹配目标必须位于0至1之间")
         if request.planning_interval_hours not in {1, 2, 3, 4, 6}:
             raise ValueError("容量规划时间间隔只支持1、2、3、4或6小时")
+        fixed_capacities = {
+            "固定光伏容量": request.fixed_pv_capacity_mw,
+            "固定绿电直连容量": request.fixed_green_direct_capacity_mw,
+            "固定储能功率": request.fixed_battery_power_mw,
+            "固定储能容量": request.fixed_battery_energy_mwh,
+        }
+        for name, value in fixed_capacities.items():
+            if value is not None and value < 0.0:
+                raise ValueError(f"{name}不能小于0")
+        fixed_limits = (
+            ("固定光伏容量", request.fixed_pv_capacity_mw, "pv.agri_planning_max_capacity_mw"),
+            (
+                "固定绿电直连容量",
+                request.fixed_green_direct_capacity_mw,
+                "green_direct.max_capacity_mw",
+            ),
+            ("固定储能功率", request.fixed_battery_power_mw, "battery.agri_planning_max_power_mw"),
+            ("固定储能容量", request.fixed_battery_energy_mwh, "battery.agri_planning_max_energy_mwh"),
+        )
+        for name, value, limit_code in fixed_limits:
+            if value is not None and value > phase1_parameter_value(limit_code) + 1e-9:
+                raise ValueError(f"{name}超过农业园区规划边界")
 
     @staticmethod
     def _validate_no_arbitrage_conditions(profiles: pd.DataFrame) -> None:
@@ -149,6 +184,10 @@ class AgriZeroCarbonOptimizer:
         curtailment_penalty = phase1_parameter_value("pv.curtailment_penalty_cny_per_mwh")
         if degradation <= curtailment_penalty:
             raise ValueError("储能放电衰减成本必须高于弃电惩罚，否则需要启用充放电整数互斥约束")
+        if "grid_import_availability_pu" in profiles and not profiles[
+            "grid_import_availability_pu"
+        ].between(0.0, 1.0).all():
+            raise ValueError("公共电网可用率必须位于0至1之间")
 
     @staticmethod
     def _aggregate_for_planning(profiles: pd.DataFrame, interval_hours: int) -> pd.DataFrame:
@@ -330,6 +369,16 @@ class AgriZeroCarbonOptimizer:
             phase1_parameter_value("battery.agri_planning_max_energy_mwh") if request.allow_battery else 0.0
         )
         upper[index["grid_peak"]] = phase1_parameter_value("grid.agri_import_capacity_mw")
+        fixed = {
+            "pv_capacity": request.fixed_pv_capacity_mw,
+            "direct_capacity": request.fixed_green_direct_capacity_mw,
+            "battery_power": request.fixed_battery_power_mw,
+            "battery_energy": request.fixed_battery_energy_mwh,
+        }
+        for name, value in fixed.items():
+            if value is not None:
+                lower[index[name]] = float(value)
+                upper[index[name]] = float(value)
 
     @staticmethod
     def _set_flexible_load_bounds(
@@ -366,6 +415,11 @@ class AgriZeroCarbonOptimizer:
         retention = 1.0 - phase1_parameter_value("battery.self_discharge_per_hour") * dt
         usable_soc = phase1_parameter_value("battery.soc_max") - phase1_parameter_value("battery.soc_min")
         import_capacity = phase1_parameter_value("grid.agri_import_capacity_mw")
+        grid_availability = (
+            data["grid_import_availability_pu"].to_numpy(dtype=float)
+            if "grid_import_availability_pu" in data
+            else np.ones(n, dtype=float)
+        )
         export_capacity = phase1_parameter_value("grid.demo_export_capacity_mw")
         irrigation_share = phase1_parameter_value("load.irrigation.flexible_share")
         processing_share = phase1_parameter_value("load.processing.flexible_share")
@@ -459,6 +513,10 @@ class AgriZeroCarbonOptimizer:
                     (global_index["grid_peak"], -1.0),
                 ),
                 0.0,
+            )
+            constraints.upper_bound(
+                ((int(blocks["grid_to_load"][t]), 1.0),),
+                import_capacity * max(0.0, min(grid_availability[t], 1.0)),
             )
             constraints.upper_bound(
                 (
