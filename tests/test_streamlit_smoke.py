@@ -1,6 +1,34 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+
 from streamlit.testing.v1 import AppTest
+
+
+def test_app_import_survives_legacy_core_module_cache() -> None:
+    code = """
+import src.core
+
+for name in (
+    "PHASE1_PARAMETER_REGISTRY",
+    "formal_readiness_gaps",
+    "phase1_parameter_value",
+):
+    delattr(src.core, name)
+
+import app
+assert app.PHASE1_PARAMETER_REGISTRY
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_all_streamlit_pages_render_without_uncaught_exceptions() -> None:

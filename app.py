@@ -43,12 +43,14 @@ from src.agri_dashboard_charts import (
 from src.core import (
     FifteenMinuteDataContract,
     IntegratedPlanningConfig,
-    PHASE1_PARAMETER_REGISTRY,
     TimeSeriesValidationResult,
-    formal_readiness_gaps,
-    phase1_parameter_value,
     sample_15min_data,
     scenario_fingerprint,
+)
+from src.core.agri_parameter_registry import (
+    PHASE1_PARAMETER_REGISTRY,
+    formal_readiness_gaps,
+    phase1_parameter_value,
 )
 from src.core.schemas import StoreMoreInputs
 from src.dashboard_charts import (
