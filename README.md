@@ -55,6 +55,7 @@ pytest
 - [第一阶段参数治理与数据模板](docs/phase1_parameter_governance.md)：定义参数来源等级、唯一参数注册表和农业园区数据接入模板。
 - [第一阶段农业园区负荷基准](docs/phase1_agri_load_baseline.md)：明确四类负荷的峰值、年电量、农时、班次、生成公式和正式替换规则。
 - [第一阶段物理能量流模型](docs/phase1_energy_flow_model.md)：定义绿电直连、储能来源分账、线路与储能损耗、四类农业负荷流向和守恒校验。
+- [第一阶段农业园区联合优化模型](docs/phase1_joint_optimization_model.md)：说明8760小时成本、碳排、绿电匹配与农业生产任务联合优化及三策略结果。
 - [项目交接手册](docs/project_handover_manual.md)：逐页操作、算法、数据、数据库、维护和扩展。
 - [平台演示讲稿](docs/demo_script.md)：按当前页面编排的演示话术和异常说明。
 - [单节点部署说明](deploy/README.md)：容器部署、认证、备份、恢复和回滚。

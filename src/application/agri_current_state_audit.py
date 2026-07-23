@@ -130,6 +130,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "默认strict_storage_exclusivity为False。",
         "成本参数异常或退化时可能出现同一时段充放电。",
         6,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "MODEL-002",
@@ -139,6 +140,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "默认strict_grid_exchange_exclusivity为False。",
         "在价格和补贴边界变化时可能出现同一时段购售电。",
         6,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "MODEL-003",
@@ -148,6 +150,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "加工、灌溉和仓储目前主要是固定负荷曲线或比例柔性代理。",
         "模型可能降低成本但不能证明生产任务、产量和品质要求得到满足。",
         6,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "CHART-001",
