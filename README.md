@@ -50,6 +50,7 @@ pytest
 
 ## 部署与交接
 
+- [第一阶段农业零碳园区边界基线](docs/phase1_agri_zero_carbon_scope.md)：冻结园区对象、四类负荷、绿电口径、零碳核算边界与第一阶段排除项。
 - [项目交接手册](docs/project_handover_manual.md)：逐页操作、算法、数据、数据库、维护和扩展。
 - [平台演示讲稿](docs/demo_script.md)：按当前页面编排的演示话术和异常说明。
 - [单节点部署说明](deploy/README.md)：容器部署、认证、备份、恢复和回滚。
