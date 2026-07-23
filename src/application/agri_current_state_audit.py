@@ -203,6 +203,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "页面标题、场景名称和说明仍大量出现县域、工业园区、低空与绿氢。",
         "与第一阶段农业零碳园区定位不一致。",
         9,
+        AuditStatus.RESOLVED,
     ),
 )
 

@@ -43,7 +43,9 @@ from src.agri_dashboard_charts import (
 from src.core import (
     FifteenMinuteDataContract,
     IntegratedPlanningConfig,
+    PHASE1_PARAMETER_REGISTRY,
     TimeSeriesValidationResult,
+    formal_readiness_gaps,
     phase1_parameter_value,
     sample_15min_data,
     scenario_fingerprint,
@@ -64,7 +66,11 @@ from src.dashboard_charts import (
     scenario_score_table,
 )
 from src.presentation import localize_v17_table
-from src.model.agri_park_profiles import generate_agri_park_profiles
+from src.model.agri_park_profiles import (
+    generate_agri_park_profiles,
+    summarize_agri_park_profiles,
+    validate_agri_park_profiles,
+)
 from src.storemore_engine import (
     csv_template,
     default_capex_table,
@@ -111,8 +117,8 @@ INTEGRATED_PAGES = [
 ]
 
 MODEL_LABELS = {
-    ModelKind.REALTIME_DISPATCH.value: "快速电力滚动调度",
-    ModelKind.INTEGRATED_PLANNING.value: "V17综合能源规划",
+    ModelKind.REALTIME_DISPATCH.value: "快速电力滚动调度（兼容）",
+    ModelKind.INTEGRATED_PLANNING.value: "V17农业零碳园区规划",
 }
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -913,7 +919,7 @@ def sidebar() -> str:
               <div class="brand-logo">G</div>
               <div>
                 <div class="brand-name">绿电向导</div>
-                <div class="brand-subtitle">实时低碳规划与调度优化</div>
+                <div class="brand-subtitle">零碳农业园区规划与调度</div>
               </div>
             </div>
             """,
@@ -923,7 +929,7 @@ def sidebar() -> str:
             "模型模式",
             options=list(MODEL_LABELS.values()),
             index=list(MODEL_LABELS).index(current_model_kind()),
-            help="快速调度用于小时级电力运行；V17用于电、热、冷、气、储能、柔性负荷、碳与电转其他能源协同规划。",
+            help="第一阶段主模式用于农业园区光伏、绿电直连、储能、四类农业负荷和运营碳排联合规划；快速调度仅作兼容保留。",
         )
         st.session_state["model_kind"] = next(
             key for key, label in MODEL_LABELS.items() if label == selected_model_label
@@ -945,15 +951,7 @@ def sidebar() -> str:
             st.caption("当前为单机演示模式；部署后台服务后自动显示项目中心。")
         st.divider()
         if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
-            execution = integrated_result()
-            if execution is None:
-                status_box("当前状态", "尚未完成综合能源规划，请先配置场景并运行模型。", ok=False)
-            else:
-                status_box(
-                    "当前状态",
-                    f"已完成场景：{execution.summary.get('scenario_name', execution.summary.get('scenario_key', '-'))}",
-                    ok=True,
-                )
+            status_box("第一阶段状态", "农业零碳基准、联合优化与六类压力测试已加载。", ok=True)
         elif result() is None:
             status_box("当前状态", "尚未完成实时计算，请先配置参数并运行模型。", ok=False)
         else:
@@ -964,12 +962,91 @@ def sidebar() -> str:
                 ok=True,
             )
         mode_note = (
-            "综合规划结果来自当前S0—S8场景和参数覆盖项。修改设备、储能、柔性负荷、碳或电转其他能源参数后需要重新运行。"
+            "主结果来自农业园区四类负荷、8760小时联合优化和参数来源台账；当前仍为演示参数，不能替代正式可研。"
             if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value
             else "图表和指标来自当前参数下的滚动线性优化结果。修改参数后需要重新运行。"
         )
         st.markdown(f'<div class="sidebar-note">{mode_note}</div>', unsafe_allow_html=True)
     return selected
+
+
+def agri_overview_page() -> None:
+    profiles, comparison, annual_flows, _, zero_summary, stress_tests = phase1_agri_visual_data()
+    load_summary = summarize_agri_park_profiles(profiles)
+    zero = comparison.iloc[2]
+    direct = comparison.iloc[1]
+    failed_stress = int((~stress_tests["零碳是否保持"].astype(str).str.lower().eq("true")).sum())
+    st.markdown(
+        """
+        <div class="cockpit-hero">
+          <div class="cockpit-eyebrow">第一阶段 · 绿电直连农业专项</div>
+          <div class="cockpit-title">零碳农业园区全景呈现</div>
+          <div class="cockpit-subtitle">灌溉水泵、粮食加工、仓储冷链和公共辅助共享本地光伏、外部绿电直连、储能与园区配电资源</div>
+          <div class="cockpit-status">全年8760小时联合优化已完成 · 当前为可追溯演示参数，正式项目待现场数据核验</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    kpis = st.columns(6)
+    with kpis[0]:
+        dashboard_kpi("园区年用电", fmt(zero_summary["annual_demand_mwh"]), "兆瓦时", "四类负荷合计", "#2563eb")
+    with kpis[1]:
+        dashboard_kpi("园区峰值负荷", fmt(profiles["total_meter_load_mw"].max(), 3), "兆瓦", "全年小时级峰值", "#0ea5e9")
+    with kpis[2]:
+        dashboard_kpi("推荐光伏", fmt(zero["本地光伏/兆瓦"]), "兆瓦", "零碳协同方案", "#f59e0b")
+    with kpis[3]:
+        dashboard_kpi("推荐直连", fmt(zero["绿电直连/兆瓦"]), "兆瓦", "外部绿电基地", "#16a34a")
+    with kpis[4]:
+        dashboard_kpi("推荐储能", fmt(zero["储能容量/兆瓦时"]), "兆瓦时", f"功率{float(zero['储能功率/兆瓦']):.2f}兆瓦", "#7c3aed")
+    with kpis[5]:
+        dashboard_kpi("压力失效项", str(failed_stress), "类", "六类压力测试", "#ef4444")
+
+    section_label("园区对象、农业负荷与技术路线")
+    left, center, right = st.columns([0.9, 1.75, 0.9])
+    with left:
+        st.markdown(
+            """
+            <div class="overview-panel">
+              <div class="overview-title">园区边界</div>
+              <div class="overview-text">
+                只纳入农业生产服务、粮食加工、仓储冷链和公共辅助设施。居民、普通商业、低空经济、绿氢、热电联产和常规燃气新建不进入第一阶段主模型。
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.dataframe(
+            load_summary[["负荷类别", "年用电量/兆瓦时", "峰值/兆瓦"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+    with center:
+        st.plotly_chart(agri_load_calendar_figure(profiles), use_container_width=True)
+    with right:
+        insight_card("本地光伏", "园区内部优先直供农业负荷，剩余电量依次进入储能、外送或弃电。", "#f59e0b")
+        insight_card("绿电直连", "外部绿电扣除3.5%专线损耗后进入园区母线，并逐时记录真实去向。", "#16a34a")
+        insight_card("来源分账储能", "光伏和直连绿电分别记账，普通电网电量不会被误算为绿电。", "#7c3aed")
+        insight_card("生产柔性", "日任务电量不能减少，只允许在设备功率和农业时间窗内移动。", "#2563eb")
+
+    section_label("三策略结论与年度能量流")
+    chart_left, chart_right = st.columns([1, 1.2])
+    with chart_left:
+        st.plotly_chart(agri_strategy_cost_carbon_figure(comparison), use_container_width=True)
+        st.info(
+            f"当前演示口径下，1兆瓦绿电直连方案年成本约{float(direct['年总成本/万元']):.2f}万元，"
+            f"物理绿电匹配率{float(direct['物理绿电匹配率/%']):.2f}%，适合作为第一阶段过渡方案。"
+        )
+    with chart_right:
+        st.plotly_chart(agri_energy_flow_sankey_figure(annual_flows), use_container_width=True)
+
+    section_label("重点风险与下一项工程任务")
+    risk_columns = st.columns(3)
+    with risk_columns[0]:
+        insight_card("低光伏风险", "光伏出力下降30%时需补充普通电56.77兆瓦时，当前容量不再满足零碳。", "#ef4444")
+    with risk_columns[1]:
+        insight_card("秋收加工风险", "集中加工负荷增加20%时需补电88.80兆瓦时，应增加任务窗口或备用绿电。", "#f97316")
+    with risk_columns[2]:
+        insight_card("直连受限风险", "直连出力下降40%时绿电匹配率降至94.46%，应建立备用供能与合同机制。", "#7c3aed")
 
 
 def integrated_overview_page() -> None:
@@ -1157,7 +1234,7 @@ def integrated_overview_page() -> None:
 
 def overview_page() -> None:
     if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
-        integrated_overview_page()
+        agri_overview_page()
         return
     page_title("园区低碳规划与绿电直连优化平台", "面向园区综合能源系统的参数建模、实时优化、指标分析与绿电直连决策支持。")
     badge(MODEL_LABELS[current_model_kind()])
@@ -1557,19 +1634,118 @@ def integrated_parameter_run_page(*, embedded: bool = False) -> None:
         st.warning("请先修正上述参数问题，再启动模型。")
 
 
+def render_agri_parameter_governance() -> None:
+    profiles, comparison, _, _, zero_summary, _ = phase1_agri_visual_data()
+    payloads = [parameter.to_payload() for parameter in PHASE1_PARAMETER_REGISTRY]
+    registry = pd.DataFrame(payloads).rename(
+        columns={
+            "name": "参数名称",
+            "group": "参数分组",
+            "unit": "单位",
+            "value": "当前值",
+            "minimum": "允许下限",
+            "maximum": "允许上限",
+            "source_grade": "来源等级",
+            "verification_status": "核验状态",
+            "source_reference": "来源依据",
+            "setting_method": "设置方法",
+            "formal_required": "正式项目必需",
+        }
+    )
+    gaps = formal_readiness_gaps()
+    demo_count = int(registry["来源等级"].astype(str).str.startswith("E-").sum())
+    pending_count = int(registry["核验状态"].eq("待补充").sum())
+    cards = st.columns(4)
+    with cards[0]:
+        dashboard_kpi("参数总数", str(len(registry)), "项", "统一参数注册表", "#2563eb")
+    with cards[1]:
+        dashboard_kpi("演示参数", str(demo_count), "项", "必须由项目资料替换", "#f97316")
+    with cards[2]:
+        dashboard_kpi("尚待赋值", str(pending_count), "项", "现场资料未接入", "#ef4444")
+    with cards[3]:
+        dashboard_kpi("正式交付缺口", str(len(gaps)), "项", "当前不可作正式可研", "#7c3aed")
+    st.warning(
+        "当前参数台账已经做到每项有来源等级、依据和设置方法，但大部分仍是E级演示假设。"
+        "这解决了‘数字从哪里来’的追溯问题，还没有解决‘数字是否属于真实园区’的问题。"
+    )
+
+    selected_group = st.selectbox(
+        "查看参数分组",
+        options=["全部", *registry["参数分组"].drop_duplicates().tolist()],
+        key="phase1_parameter_group",
+    )
+    visible = registry if selected_group == "全部" else registry[registry["参数分组"].eq(selected_group)]
+    display_columns = [
+        "参数名称",
+        "参数分组",
+        "当前值",
+        "单位",
+        "允许下限",
+        "允许上限",
+        "来源等级",
+        "核验状态",
+        "来源依据",
+        "设置方法",
+    ]
+    st.dataframe(visible[display_columns], use_container_width=True, hide_index=True)
+
+    section_label("四类农业负荷的明确设置")
+    st.dataframe(summarize_agri_park_profiles(profiles), use_container_width=True, hide_index=True)
+    st.caption(
+        "灌溉521.93兆瓦时、粮食加工3825.83兆瓦时、仓储冷链3287.88兆瓦时、公共辅助1266.72兆瓦时；"
+        "园区合计8902.36兆瓦时。当前均由农业日历和设备尺度合成，不冒充同江真实计量数据。"
+    )
+
+    section_label("正式数据接入模板")
+    template_files = [
+        ("下载15分钟时序模板", "phase1_agri_park_timeseries_template.csv"),
+        ("下载设备资产模板", "phase1_agri_park_assets_template.csv"),
+        ("下载生产任务模板", "phase1_agri_park_tasks_template.csv"),
+        ("下载来源凭证模板", "phase1_source_ledger_template.csv"),
+    ]
+    template_columns = st.columns(4)
+    for column, (label, filename) in zip(template_columns, template_files, strict=True):
+        with column:
+            path = PROJECT_ROOT / "data" / "templates" / filename
+            st.download_button(
+                label,
+                data=path.read_bytes(),
+                file_name=filename,
+                mime="text/csv",
+                use_container_width=True,
+                key=f"download_{filename}",
+            )
+
+    if st.button("执行第一阶段数据与结果一致性复核", type="primary", use_container_width=True):
+        profile_issues = validate_agri_park_profiles(profiles)
+        balance_ok = zero_summary["max_bus_balance_error_mw"] <= 1e-7
+        comparison_ok = len(comparison) == 3 and comparison["策略"].nunique() == 3
+        if not profile_issues and balance_ok and comparison_ok:
+            st.success(
+                "复核通过：全年时序连续、四类负荷与总表闭环、三策略齐全、零碳方案母线平衡通过。"
+                "由于正式参数仍未补齐，结论继续标记为‘演示参数待核验’。"
+            )
+        else:
+            st.error(f"复核未通过：{profile_issues or ['能量平衡或三策略结果异常']}")
+
+
 def parameter_run_page() -> None:
     page_title(
-        "参数配置与运行",
-        "在一个页面内完成模型参数、源荷数据、质量校验、预测和优化运行。",
+        "农业园区参数、数据与运行",
+        "查看每项参数来源、四类农业负荷设置和正式数据模板，并执行结果一致性复核。",
     )
-    configuration_tab, data_tab = st.tabs(["模型参数与运行", "数据校验与预测"])
-    with configuration_tab:
-        if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+    if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
+        render_agri_parameter_governance()
+        st.divider()
+        if st.checkbox("显示原V17县域综合能源兼容配置", value=False):
+            st.info("该兼容区不属于第一阶段农业专项主模型，仅用于继续读取和复核原S0—S8功能。")
             integrated_parameter_run_page(embedded=True)
-        else:
-            realtime_parameter_run_page(embedded=True)
-    with data_tab:
-        data_forecast_page(embedded=True)
+        if st.checkbox("显示15分钟数据校验与预测工具", value=False):
+            data_forecast_page(embedded=True)
+    else:
+        realtime_parameter_run_page(embedded=True)
+        if st.checkbox("显示15分钟数据校验与预测工具", value=False, key="realtime_data_tools"):
+            data_forecast_page(embedded=True)
 
 
 def realtime_parameter_run_page(*, embedded: bool = False) -> None:
@@ -1929,7 +2105,10 @@ def integrated_analysis_page() -> None:
         "按农业生产日历、物理绿电流向、储能来源分账、成本碳排权衡和关键农时逐时调度解释规划结果。",
     )
     render_agri_zero_carbon_analysis()
-    section_label("原V17综合能源结果（兼容保留）")
+    if not st.checkbox("显示原V17县域综合能源结果", value=False):
+        st.caption("原V17县域综合能源结果已从第一阶段主页面移出，需要复核历史结果时可手动展开。")
+        return
+    section_label("原V17县域综合能源结果（兼容保留）")
     execution = require_integrated_result()
     if execution is None:
         return
@@ -2844,14 +3023,88 @@ def analysis_page() -> None:
         realtime_results_page()
 
 
+def render_agri_decision_page() -> None:
+    _, comparison, _, _, _, stress_tests = phase1_agri_visual_data()
+    baseline = comparison.iloc[0]
+    direct = comparison.iloc[1]
+    zero = comparison.iloc[2]
+    direct_saving = float(baseline["年总成本/万元"] - direct["年总成本/万元"])
+    zero_premium = float(zero["年总成本/万元"] - baseline["年总成本/万元"])
+    zero_premium_rate = 100.0 * zero_premium / max(float(baseline["年总成本/万元"]), 1e-9)
+    cards = st.columns(4)
+    with cards[0]:
+        dashboard_kpi("过渡方案节约", fmt(direct_saving), "万元/年", "相对现状基准", "#16a34a")
+    with cards[1]:
+        dashboard_kpi("过渡方案减排", fmt(100.0 * (1.0 - float(direct["运营碳排放/吨"]) / float(baseline["运营碳排放/吨"]))), "%", "1兆瓦直连演示方案", "#059669")
+    with cards[2]:
+        dashboard_kpi("零碳成本增量", fmt(zero_premium), "万元/年", f"相对现状增加{zero_premium_rate:.1f}%", "#7c3aed")
+    with cards[3]:
+        dashboard_kpi("零碳压力失效", "3", "类", "低光伏、集中加工、直连受限", "#ef4444")
+
+    st.plotly_chart(agri_strategy_cost_carbon_figure(comparison), use_container_width=True)
+    recommendation_left, recommendation_right = st.columns(2)
+    with recommendation_left:
+        st.success(
+            "当前演示参数下，优先推进‘绿电直连过渡方案’：1.50兆瓦本地光伏、1.00兆瓦直连、"
+            "0.80兆瓦/2.00兆瓦时储能。它尚未零碳，但成本低于现状，且运营排放降低约74.65%。"
+        )
+        st.dataframe(comparison, use_container_width=True, hide_index=True)
+    with recommendation_right:
+        st.warning(
+            "不建议把当前零碳协同容量直接作为施工方案。它在标准年计算排放为零，但六类压力中有三类失效，"
+            "并且关键输入仍是E级演示参数。应先取得现场数据，再设计可靠性裕度。"
+        )
+        decision_steps = pd.DataFrame(
+            [
+                {"阶段": "一、数据定标", "完成条件": "接入总表、分表、设备铭牌、生产任务、绿电合同、电价和属地碳因子"},
+                {"阶段": "二、过渡实施", "完成条件": "复核1兆瓦直连方案的接网、工程费、结算方式和储能消防条件"},
+                {"阶段": "三、稳健零碳", "完成条件": "低光伏、集中加工和直连受限压力下仍无普通电网碳排"},
+            ]
+        )
+        st.dataframe(decision_steps, use_container_width=True, hide_index=True)
+
+    section_label("为什么当前零碳容量还不能直接交付")
+    st.plotly_chart(agri_stress_test_figure(stress_tests), use_container_width=True)
+    decision_columns = [
+        "压力条件",
+        "零碳是否保持",
+        "年购普通电/兆瓦时",
+        "物理绿电匹配率/%",
+        "运营碳排放/吨",
+        "相对基准成本变化/%",
+        "结论",
+    ]
+    st.dataframe(stress_tests[decision_columns], use_container_width=True, hide_index=True)
+    st.caption(
+        "这里的推荐是模型筛查结论，不是投资承诺。直连受限时成本下降来自实际供电量减少，同时会重新产生碳排，"
+        "因此不能只按成本排序。"
+    )
+    st.download_button(
+        "下载农业园区决策与压力结果",
+        data=(
+            "三策略对比\n"
+            + comparison.to_csv(index=False)
+            + "\n压力测试\n"
+            + stress_tests.to_csv(index=False)
+        ).encode("utf-8-sig"),
+        file_name="农业零碳园区决策结果.csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="download_agri_decision",
+    )
+
+
 def decision_page() -> None:
     if current_model_kind() == ModelKind.INTEGRATED_PLANNING.value:
-        page_title("场景与决策", "比较V17规划场景，并查看绿电直连和电转其他能源方案。")
-        comparison_tab, green_tab = st.tabs(["场景对比", "绿电直连与电转其他能源"])
-        with comparison_tab:
-            scenario_comparison_page(embedded=True)
-        with green_tab:
-            green_direct_page(embedded=True)
+        page_title("农业零碳方案决策", "比较现状、绿电直连过渡和零碳协同三种策略，并依据压力测试形成分阶段建议。")
+        render_agri_decision_page()
+        if st.checkbox("显示原V17县域多场景兼容功能", value=False):
+            st.info("以下S0—S8和电转其他能源功能不属于第一阶段农业专项，只作兼容复核。")
+            comparison_tab, green_tab = st.tabs(["原V17场景对比", "原V17绿电与电转其他能源"])
+            with comparison_tab:
+                scenario_comparison_page(embedded=True)
+            with green_tab:
+                green_direct_page(embedded=True)
     else:
         page_title("绿电决策", "基于当前调度结果测算绿电缺口和补充方案成本。")
         green_direct_page(embedded=True)
