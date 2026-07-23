@@ -100,6 +100,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "当前仅根据年度目标电量、度电成本、损耗和固定费进行事后方案比较。",
         "无法说明绿电在什么时刻到达、供给哪类负荷、是否进入储能。",
         5,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "GREEN-002",
@@ -109,6 +110,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "只有统一荷电状态，没有本地光伏、直连绿电和普通电网充电来源。",
         "储能放电可能被错误计入绿电覆盖，无法形成可核验能量流。",
         5,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "CARBON-001",
@@ -118,6 +120,7 @@ CURRENT_STATE_FINDINGS: tuple[AuditFinding, ...] = (
         "电网排放采用固定0.55吨每兆瓦时，绿电直连没有替代逐时电网购电。",
         "零碳状态不能由当前结果可靠判定。",
         5,
+        AuditStatus.RESOLVED,
     ),
     AuditFinding(
         "MODEL-001",
