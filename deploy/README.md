@@ -1,5 +1,25 @@
 # 单节点交付部署
 
+## 融合版 V2 推荐入口
+
+融合版使用 React 页面、FastAPI 接口、独立任务执行器和 Nginx 同源代理，编排文件为 `compose.v2.yaml`。当前可交付形态是单节点 SQLite 持久任务仓储；PostgreSQL 项目级表结构已经交付为可选目标环境，但尚未替换现有任务仓储适配器，系统页面会如实显示“待部署配置”。
+
+1. 复制 `.env.v2.example` 为 `.env`。
+2. 生成认证密钥和账号密码哈希：`python scripts/generate_password_hash.py`。
+3. 将账号对象写入 `PLATFORM_USERS_JSON`，并替换所有 `replace` 占位值。
+4. 运行 `docker compose -f compose.v2.yaml config` 检查变量和编排。
+5. 运行 `docker compose -f compose.v2.yaml up -d --build`。
+6. 访问 `http://服务器地址:8080`，依次检查登录、总览、系统监控和一个模型结果页面。
+7. 检查 `http://服务器地址:8080/health`、`/ready` 和受控网络中的 `/metrics`。
+
+需要只验证 PostgreSQL 目标表结构时，设置强密码后运行：
+
+```bash
+docker compose -f compose.v2.yaml --profile postgres-target up -d postgres
+```
+
+这不会自动把现有 API 仓储切换到 PostgreSQL，不得把“容器已启动”解释为“业务迁移已完成”。
+
 本部署形态由UI、API、Worker和持久化数据卷组成，适合演示、受控内网试点和单节点项目交付。SQLite使用WAL模式；后台任务使用原子领取、Worker租约、心跳、超时恢复和幂等键避免重复提交。
 
 该形态不是跨主机高可用集群。需要多节点容灾时，应将持久化接口替换为PostgreSQL、Redis队列和对象存储，并接入企业SSO与集中监控；当前版本没有把这些外部组件标记为已实现。

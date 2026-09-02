@@ -8,9 +8,10 @@ import sqlite3
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
-from src.application import get_model_spec, list_model_specs
-from src.api.schemas import JobCreate, JobTransition, ProjectCreate, ScenarioCreate, TokenRequest
+from src.application import SystemStatusService, V2ModelFacade, get_model_spec, list_model_specs
+from src.api.schemas import JobCreate, JobTransition, LoginRequest, ProjectCreate, ScenarioCreate, TokenRequest
 from src.persistence import Database, PlatformRepository
 from src.observability import configure_json_logging
 from src.security import AuthService, Principal
@@ -24,8 +25,25 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     repository = PlatformRepository(Database(database_path))
     auth_service = AuthService.from_env()
     app = FastAPI(title="园区低碳优化平台 API", version=PLATFORM_VERSION)
+    allowed_origins = [
+        origin.strip()
+        for origin in os.getenv(
+            "PLATFORM_CORS_ORIGINS",
+            "http://127.0.0.1:4173,http://127.0.0.1:5173,http://localhost:4173,http://localhost:5173",
+        ).split(",")
+        if origin.strip()
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-User-ID"],
+    )
     app.state.repository = repository
     app.state.auth_service = auth_service
+    app.state.v2_model_facade = V2ModelFacade()
+    app.state.system_status_service = SystemStatusService(repository, auth_service)
 
     @app.middleware("http")
     async def request_observability(request: Request, call_next):
@@ -106,6 +124,102 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/v1/models")
     def list_models(principal: Principal = Depends(current_principal)):
         return list_model_specs()
+
+    @app.post("/api/v1/auth/login")
+    def login(payload: LoginRequest, request: Request):
+        try:
+            token, principal, display_name = auth_service.login(payload.username, payload.password)
+        except AuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        repository.append_audit(
+            principal.user_id,
+            "auth.login",
+            "account",
+            principal.user_id,
+            {"role": principal.role, "client_ip": request.client.host if request.client else "unknown"},
+        )
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "expires_in": auth_service.token_ttl_seconds,
+            "user": {"userId": principal.user_id, "displayName": display_name, "role": principal.role},
+        }
+
+    @app.get("/api/v1/auth/me")
+    def auth_me(principal: Principal = Depends(current_principal)):
+        account = next((item for item in auth_service.safe_accounts() if item["username"] == principal.user_id), None)
+        return {
+            "userId": principal.user_id,
+            "displayName": account["displayName"] if account else principal.user_id,
+            "role": principal.role,
+            "authMode": auth_service.mode,
+        }
+
+    @app.get("/api/v2/overview")
+    def v2_overview(
+        year: int = Query(default=2025, ge=2020, le=2100),
+        resolution_minutes: int = Query(default=60),
+        principal: Principal = Depends(current_principal),
+    ):
+        try:
+            return app.state.v2_model_facade.overview(
+                year=year,
+                resolution_minutes=resolution_minutes,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/v2/parameters")
+    def v2_parameters(principal: Principal = Depends(current_principal)):
+        return app.state.v2_model_facade.parameters()
+
+    @app.get("/api/v2/strategies")
+    def v2_strategies(
+        year: int = Query(default=2025, ge=2020, le=2100),
+        principal: Principal = Depends(current_principal),
+    ):
+        try:
+            return app.state.v2_model_facade.strategies(year=year)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/v2/stress-tests")
+    def v2_stress_tests(
+        year: int = Query(default=2025, ge=2020, le=2100),
+        principal: Principal = Depends(current_principal),
+    ):
+        try:
+            return app.state.v2_model_facade.stress_tests(year=year)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/v2/green-direct-benefits")
+    def v2_green_direct_benefits(
+        year: int = Query(default=2025, ge=2020, le=2100),
+        principal: Principal = Depends(current_principal),
+    ):
+        try:
+            return app.state.v2_model_facade.green_direct_benefits(year=year)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/v2/forecasts")
+    def v2_forecasts(
+        year: int = Query(default=2025, ge=2020, le=2100),
+        principal: Principal = Depends(current_principal),
+    ):
+        try:
+            return app.state.v2_model_facade.forecast_center(year=year)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/v2/assets")
+    def v2_assets(principal: Principal = Depends(current_principal)):
+        return app.state.v2_model_facade.asset_register()
+
+    @app.get("/api/v2/system-status")
+    def v2_system_status(principal: Principal = Depends(require_roles("admin", "auditor"))):
+        return app.state.system_status_service.snapshot(principal)
 
     @app.get("/api/v1/audit")
     def list_audit(
