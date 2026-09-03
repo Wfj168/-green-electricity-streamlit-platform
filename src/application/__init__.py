@@ -15,9 +15,16 @@ from src.application.model_service import (
     list_integrated_scenarios,
     list_model_specs,
 )
+from src.application.green_direct_benefit_service import (
+    GreenDirectBenefitRequest,
+    GreenDirectBenefitResult,
+    GreenDirectBenefitService,
+)
 from src.application.model_audit_service import ModelAuditResult, ModelAuditService
 from src.application.scenario_comparison_service import ScenarioComparisonResult, ScenarioComparisonService
 from src.application.simulation_service import SimulationRequest, SimulationService
+from src.application.v2_model_facade import V2ModelFacade
+from src.application.system_status_service import SystemStatusService
 
 __all__ = [
     "CarbonAnalysisResult",
@@ -25,6 +32,9 @@ __all__ = [
     "GreenDirectRequest",
     "GreenDirectResult",
     "GreenDirectService",
+    "GreenDirectBenefitRequest",
+    "GreenDirectBenefitResult",
+    "GreenDirectBenefitService",
     "DayAheadForecast",
     "ForecastEvaluationResult",
     "ForecastService",
@@ -41,6 +51,8 @@ __all__ = [
     "SimulationRequest",
     "SimulationService",
     "UnifiedModelService",
+    "V2ModelFacade",
+    "SystemStatusService",
     "get_integrated_scenario",
     "get_model_spec",
     "list_integrated_scenarios",

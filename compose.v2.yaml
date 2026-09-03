@@ -1,0 +1,84 @@
+name: zero-carbon-agri-park-v2
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/api.Dockerfile
+    environment:
+      PLATFORM_DB_PATH: /app/var/platform.db
+      PLATFORM_ARTIFACT_DIR: /app/var/artifacts
+      PLATFORM_BACKUP_DIR: /app/var/backups
+      PLATFORM_AUTH_MODE: ${PLATFORM_AUTH_MODE:-token}
+      PLATFORM_AUTH_SECRET: ${PLATFORM_AUTH_SECRET:?Set PLATFORM_AUTH_SECRET}
+      PLATFORM_BOOTSTRAP_KEY: ${PLATFORM_BOOTSTRAP_KEY:?Set PLATFORM_BOOTSTRAP_KEY}
+      PLATFORM_USERS_JSON: ${PLATFORM_USERS_JSON:-[]}
+      PLATFORM_TOKEN_TTL_SECONDS: ${PLATFORM_TOKEN_TTL_SECONDS:-28800}
+      PLATFORM_CORS_ORIGINS: ${PLATFORM_CORS_ORIGINS:-http://localhost:8080}
+      PLATFORM_WORKER_ID: ${PLATFORM_WORKER_ID:-worker-1}
+      PLATFORM_JOB_LEASE_SECONDS: ${PLATFORM_JOB_LEASE_SECONDS:-3600}
+      TZ: Asia/Shanghai
+    volumes:
+      - v2-platform-data:/app/var
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/api.Dockerfile
+    command: ["python", "worker.py", "--poll-seconds", "2"]
+    environment:
+      PLATFORM_DB_PATH: /app/var/platform.db
+      PLATFORM_ARTIFACT_DIR: /app/var/artifacts
+      PLATFORM_WORKER_ID: ${PLATFORM_WORKER_ID:-worker-1}
+      PLATFORM_JOB_LEASE_SECONDS: ${PLATFORM_JOB_LEASE_SECONDS:-3600}
+      TZ: Asia/Shanghai
+    volumes:
+      - v2-platform-data:/app/var
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        VITE_AUTH_REQUIRED: ${VITE_AUTH_REQUIRED:-true}
+    ports:
+      - "${V2_FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres-target"]
+    environment:
+      POSTGRES_DB: ${V2_POSTGRES_DB:-zero_carbon_park}
+      POSTGRES_USER: ${V2_POSTGRES_USER:-platform}
+      POSTGRES_PASSWORD: ${V2_POSTGRES_PASSWORD:-change-before-postgres-profile}
+      TZ: Asia/Shanghai
+    ports:
+      - "${V2_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - v2-postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${V2_POSTGRES_USER:-platform} -d ${V2_POSTGRES_DB:-zero_carbon_park}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  v2-platform-data:
+  v2-postgres-data:
