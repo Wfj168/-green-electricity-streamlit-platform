@@ -261,4 +261,3 @@
 | `compose.v2.yaml` | 融合版部署编排 |
 | `deploy/README.md` | 部署、运维、备份和升级说明 |
 | `tests`、`frontend/src/**/*.test.ts` | 自动化验收 |
-
