@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
+
+
+APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
 
 
 def test_app_import_survives_legacy_core_module_cache() -> None:
@@ -32,7 +36,7 @@ assert app.PHASE1_PARAMETER_REGISTRY
 
 
 def test_all_streamlit_pages_render_without_uncaught_exceptions() -> None:
-    app = AppTest.from_file("app.py", default_timeout=30).run()
+    app = AppTest.from_file(APP_PATH, default_timeout=30).run()
     assert not app.exception
     assert len(app.radio) == 1
 
@@ -46,7 +50,7 @@ def test_all_streamlit_pages_render_without_uncaught_exceptions() -> None:
 
 def test_project_center_is_hidden_for_invalid_api_url(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_API_URL", "not-a-valid-url")
-    app = AppTest.from_file("app.py", default_timeout=30).run()
+    app = AppTest.from_file(APP_PATH, default_timeout=30).run()
     navigation = app.radio[0]
     assert not app.exception
     assert "项目中心" not in navigation.options
@@ -54,7 +58,7 @@ def test_project_center_is_hidden_for_invalid_api_url(monkeypatch) -> None:
 
 
 def test_integrated_planning_configuration_runs_end_to_end() -> None:
-    app = AppTest.from_file("app.py", default_timeout=60).run()
+    app = AppTest.from_file(APP_PATH, default_timeout=60).run()
     app.selectbox[0].set_value("V17农业零碳园区规划")
     app.run(timeout=60)
     app.radio[0].set_value("参数配置与运行")
@@ -99,7 +103,7 @@ def test_integrated_planning_configuration_runs_end_to_end() -> None:
 
 
 def test_data_forecast_and_intraday_page_runs_end_to_end() -> None:
-    app = AppTest.from_file("app.py", default_timeout=60).run()
+    app = AppTest.from_file(APP_PATH, default_timeout=60).run()
     app.radio[0].set_value("参数配置与运行")
     app.run(timeout=60)
 
